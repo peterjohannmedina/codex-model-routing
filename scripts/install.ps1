@@ -1,0 +1,95 @@
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$UserRoot = [Environment]::GetFolderPath('UserProfile'),
+    [switch]$SkipGlobalInstruction
+)
+
+$ErrorActionPreference = 'Stop'
+
+$resolvedSource = (Resolve-Path -LiteralPath $SourceRoot).Path
+$requiredFiles = @(
+    'SKILL.md',
+    'agents\openai.yaml',
+    'assets\AGENTS.md.snippet',
+    'assets\setup-prompt.md',
+    'assets\agents\luna-efficient.toml',
+    'assets\agents\terra-general.toml',
+    'assets\agents\sol-expert.toml',
+    'references\model-surfaces.md',
+    'references\switching-economics.md'
+)
+
+foreach ($relativePath in $requiredFiles) {
+    $candidate = Join-Path $resolvedSource $relativePath
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw "Router package is incomplete: missing $relativePath"
+    }
+}
+
+$skillParent = Join-Path $UserRoot '.agents\skills'
+$skillDestination = Join-Path $skillParent 'codex-model-routing'
+$agentDestination = Join-Path $UserRoot '.codex\agents'
+$sourcePrefix = $resolvedSource.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+$resolvedSkillDestination = [IO.Path]::GetFullPath($skillDestination)
+
+if (
+    -not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $resolvedSkillDestination) -and
+    $resolvedSkillDestination.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "Refusing to install the skill inside its own source directory: $resolvedSkillDestination"
+}
+
+if ($PSCmdlet.ShouldProcess($skillDestination, 'Install Codex model-routing skill package')) {
+    New-Item -ItemType Directory -Force -Path $skillParent | Out-Null
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $skillDestination)) {
+        New-Item -ItemType Directory -Force -Path $skillDestination | Out-Null
+        Get-ChildItem -LiteralPath $resolvedSource -Force |
+            Copy-Item -Destination $skillDestination -Recurse -Force
+    }
+}
+
+if ($PSCmdlet.ShouldProcess($agentDestination, 'Install Luna, Terra, and Sol custom-agent profiles')) {
+    New-Item -ItemType Directory -Force -Path $agentDestination | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $resolvedSource 'assets\agents') -Filter '*.toml' -File |
+        Copy-Item -Destination $agentDestination -Force
+}
+
+if (-not $SkipGlobalInstruction) {
+    $agentsPath = Join-Path $UserRoot 'AGENTS.md'
+    $snippet = Get-Content -Raw -LiteralPath (Join-Path $resolvedSource 'assets\AGENTS.md.snippet')
+    $startMarker = '<!-- codex-model-routing:start -->'
+    $endMarker = '<!-- codex-model-routing:end -->'
+
+    $existing = if (Test-Path -LiteralPath $agentsPath) {
+        Get-Content -Raw -LiteralPath $agentsPath
+    } else {
+        ''
+    }
+
+    $markerPattern = '(?ms)^<!-- codex-model-routing:start -->.*?^<!-- codex-model-routing:end -->\s*'
+    $legacyPattern = '(?ms)^## Default Codex Model Routing\s*\r?\n.*?(?=^## |\z)'
+
+    if ($existing.Contains($startMarker) -and $existing.Contains($endMarker)) {
+        $updated = [regex]::new($markerPattern).Replace($existing, "$snippet`r`n", 1)
+    } elseif ([regex]::IsMatch($existing, $legacyPattern)) {
+        $updated = [regex]::new($legacyPattern).Replace($existing, "$snippet`r`n", 1)
+    } else {
+        $separator = if ([string]::IsNullOrWhiteSpace($existing)) { '' } else { "`r`n`r`n" }
+        $updated = "$($existing.TrimEnd())$separator$snippet`r`n"
+    }
+
+    if ($PSCmdlet.ShouldProcess($agentsPath, 'Enable global Codex model-routing instruction')) {
+        Set-Content -LiteralPath $agentsPath -Value $updated -Encoding utf8NoBOM
+    }
+}
+
+Write-Output "Skill: $skillDestination"
+Write-Output "Custom agents: $agentDestination"
+if ($SkipGlobalInstruction) {
+    Write-Output 'Global AGENTS.md instruction: skipped'
+} else {
+    Write-Output "Global AGENTS.md instruction: $(Join-Path $UserRoot 'AGENTS.md')"
+}
+Write-Output 'The optional routing-bypass permission profile was not enabled.'
+Write-Output 'Start a new chat or restart Codex if the updated skill is not detected automatically.'

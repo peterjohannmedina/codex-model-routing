@@ -1,0 +1,9 @@
+<!-- codex-model-routing:start -->
+## Default Codex Model Routing
+
+- Apply `$codex-model-routing` implicitly at the start of every nontrivial task under this home directory; the user does not need to invoke it.
+- During planning, select the main-session model and reasoning effort from the hardest tightly coupled phase, and scope each useful subagent by role, model, effort, bounded context, acceptance criteria, and return format before execution.
+- Keep coherent work in the current thread and model when context-transfer and coordination costs outweigh likely savings. Switch or delegate only when the remaining work clearly repays those costs.
+- Remember that a model change forfeits the warm prompt prefix, so its cost scales with context already accumulated rather than work remaining. Decide routes at boundaries — planning, subagent spawn, post-compaction — where that cost is near zero. Raise reasoning effort before changing model, and never oscillate between models inside one thread.
+- Treat routing and permissions as separate controls. The routing skill never authorizes permission elevation; use any bypass profile only when the user explicitly selects it.
+<!-- codex-model-routing:end -->

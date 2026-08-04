@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Model Routing"
+  short_description: "Plan context-efficient model and agent routing"
+  default_prompt: "Use $codex-model-routing to plan the main model, reasoning effort, and bounded subagents before execution."

@@ -1,0 +1,10 @@
+# Artifact of running install.ps1 with -UserRoot pointed inside the package.
+# A prior run created an infinitely recursive junction here; the installer
+# now refuses a destination nested under its own source, but keep this so a
+# stray test install can never be committed.
+.installer-test/
+
+# Local editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
