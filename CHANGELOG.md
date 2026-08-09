@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-09
+
+### Added
+
+- Added a persistent usage-limit conservation guard. When an observed session or weekly Codex usage bucket reaches 90% used, it records the state and preserves conservation mode until the triggering bucket is positively observed to reset.
+- Integrated the `cost-tracker` guidance into routing: live Codex usage data takes priority when it is available, while context reduction and batching remain the supporting conservation practices.
+
+### Changed
+
+- Luna now uses `max` reasoning effort by default.
+- In conservation mode, Luna at `max` is the main route for all operations. Terra and Sol are restricted to planning or a clearly demonstrated Luna capability gap; routine implementation, exploration, testing, formatting, and review remain on Luna.
+
+### Clarified
+
+- Codex does not expose a machine-readable background usage meter through the installed CLI. The guard consumes the usage page, banner, or in-session `/status` when the active surface exposes it, and retains the last persisted state otherwise.
+
 ## 2026-08-04
 
 ### Added

@@ -13,6 +13,32 @@ Treat routing as task policy, never as authorization. Do not grant approvals, ch
 
 Treat the optional `routing-bypass` profile as an explicit launch-time choice. Use it only when the user intentionally starts Codex with `codex --profile routing-bypass`; never infer or activate it from a task prompt. Keep Plan mode independent.
 
+## Usage-limit guard
+
+Treat available Codex usage as a protected resource. Before routing any nontrivial task, inspect the current Codex usage page, limit banner, or in-session `/status` output when the active surface makes it available. Record the most recent observed state in `$CODEX_HOME/state/codex-routing-usage.json`:
+
+```json
+{
+  "session": { "used_percent": 0, "resets_at": null },
+  "weekly": { "used_percent": 0, "resets_at": null },
+  "conservation_mode": false,
+  "observed_at": null
+}
+```
+
+Activate **conservation mode** as soon as either an observed session or weekly bucket is at least 90% used (equivalently, 10% or less remains). Once activated, it remains active across sessions and threads. Clear it only after the active surface positively shows that every bucket which triggered conservation mode has reset; never clear it because time has merely elapsed or because usage data is unavailable.
+
+When a usage reading cannot be obtained, retain the existing persisted state. Do not guess at remaining allowance, query billing data, or claim that the guard has cleared.
+
+In conservation mode:
+
+- Use **Luna (`gpt-5.6-luna`) at `max` effort** as the main model for every operation.
+- Use Terra or Sol only for planning, or for a tightly scoped intelligence/capability gap that Luna has demonstrably failed to resolve. Keep the stronger-model task packet short and return a distilled result to Luna.
+- Do not use Terra or Sol for routine implementation, exploration, formatting, testing, or review.
+- Prefer one coherent Luna turn, targeted reads, and bounded verification; avoid fan-out and model oscillation.
+
+This guard integrates the `cost-tracker` skill as the accounting policy: use it to reduce context waste and batching overhead, but treat plan/billing estimates as secondary to the live usage reading. If the current Codex surface exposes no readable usage telemetry, this is a persisted policy guard rather than a background meter.
+
 ## Plan the route before execution
 
 For every nontrivial task:
@@ -29,11 +55,11 @@ For more than two workers or a multi-phase fan-out, tell the user the proposed a
 
 | Route | Default effort | Use for |
 |---|---|---|
-| Luna (`gpt-5.6-luna`) | low | Clear, repeatable, high-volume work: extraction, classification, formatting, known-pattern scans, mechanical transformations, and structured summaries. |
+| Luna (`gpt-5.6-luna`) | max | Clear, repeatable, high-volume work: extraction, classification, formatting, known-pattern scans, mechanical transformations, and structured summaries. |
 | Terra (`gpt-5.6-terra`) | medium | Everyday engineering: repository exploration, routine fixes, tests from a clear specification, documentation, and standard tool-driven work. |
 | Sol (`gpt-5.6-sol`) | medium or high | Ambiguous or high-value work: multi-file implementation, unclear debugging, architecture, security, consequential review, and polished final judgment. |
 
-Increase effort before changing models when the task still fits the current model but needs more checking. Use `high` for complex logic and edge cases. Reserve `xhigh`, `max`, or `ultra` for the hardest supported workloads; availability varies by surface.
+Luna uses `max` effort by default. For Terra and Sol, increase effort before changing models when the task still fits the current model but needs more checking. Use `high` for complex logic and edge cases. Reserve `xhigh`, `max`, or `ultra` for the hardest supported workloads; availability varies by surface.
 
 When uncertain between adjacent routes, choose the stronger route. Never trade correctness or safety for token savings.
 
@@ -48,6 +74,8 @@ Prefer staying with the current main model when:
 - The cheaper or stronger phase is short relative to the handoff cost.
 - The transcript is large and no compact, trustworthy handoff artifact exists.
 - Surface support for an in-thread model change is uncertain.
+
+When conservation mode is active, Luna is the current main route by policy. The normal capability and economics criteria cannot override the conservation-mode restrictions.
 
 Switch the main model, or start a deliberately scoped handoff, only when:
 
