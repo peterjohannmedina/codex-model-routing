@@ -17,7 +17,8 @@ $requiredFiles = @(
     (Join-Path (Join-Path 'assets' 'agents') 'terra-general.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'sol-expert.toml'),
     (Join-Path 'references' 'model-surfaces.md'),
-    (Join-Path 'references' 'switching-economics.md')
+    (Join-Path 'references' 'switching-economics.md'),
+    (Join-Path 'scripts' 'test-muse-access.ps1')
 )
 
 foreach ($relativePath in $requiredFiles) {
@@ -32,7 +33,12 @@ $skillParent = Join-Path $codexRoot 'skills'
 $skillDestination = Join-Path $skillParent 'codex-model-routing'
 $agentDestination = Join-Path $codexRoot 'agents'
 $sourcePrefix = $resolvedSource.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-$resolvedSkillDestination = [IO.Path]::GetFullPath($skillDestination)
+$existingSkillDestination = Get-Item -LiteralPath $skillDestination -Force -ErrorAction SilentlyContinue
+$resolvedSkillDestination = if ($null -ne $existingSkillDestination -and $existingSkillDestination.LinkType -in @('Junction', 'SymbolicLink')) {
+    [IO.Path]::GetFullPath([string]$existingSkillDestination.Target)
+} else {
+    [IO.Path]::GetFullPath($skillDestination)
+}
 
 if (
     -not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $resolvedSkillDestination) -and
@@ -43,7 +49,7 @@ if (
 
 if ($PSCmdlet.ShouldProcess($skillDestination, 'Install Codex model-routing skill package')) {
     New-Item -ItemType Directory -Force -Path $skillParent | Out-Null
-    if (-not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $skillDestination)) {
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $resolvedSkillDestination)) {
         New-Item -ItemType Directory -Force -Path $skillDestination | Out-Null
         Get-ChildItem -LiteralPath $resolvedSource -Force |
             Where-Object { $_.Name -ne '.git' } |

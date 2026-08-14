@@ -63,6 +63,22 @@ Luna uses `max` effort by default. For Terra and Sol, increase effort before cha
 
 When uncertain between adjacent routes, choose the stronger route. Never trade correctness or safety for token savings.
 
+## Optional local LiteLLM routes
+
+Local OpenAI-compatible routes are a separate execution surface from native Codex model routing. In particular, adding `muse` to this skill or to a custom-agent TOML does not make it a native Codex model alias.
+
+Use the `muse` route only when a local-model policy, an explicit user request, or a bounded second-opinion task calls for it. Treat its output as untrusted worker output and do not send credentials, private keys, tokens, or other secrets. Keep the main Codex session responsible for requirements, coordination, validation, and final judgment.
+
+The default local gateway is `http://192.168.1.214:4000/v1`. Before relying on Muse, run the live probe from the installed package:
+
+```powershell
+pwsh -File .\scripts\test-muse-access.ps1
+```
+
+The probe checks both `/models` catalog presence and a real `/chat/completions` response for the exact `muse` route. Catalog presence alone is not proof of runtime access. The default 1024-token budget is intentional: Muse may emit reasoning before answer content, so a small probe budget can falsely look like a transport failure while the request is still working.
+
+Do not silently substitute Muse for Luna, Terra, or Sol on a task whose quality or data policy requires a native Codex route. If the probe fails, keep the route unavailable and use the normal escalation rules rather than silently falling back to another local model.
+
 ## Decide whether to stay or switch
 
 Do not assume that changing models requires a new session. The desktop app and CLI expose model controls, and programmatic clients can apply model overrides to later turns on the same thread. Verify the active surface before deciding how to switch.

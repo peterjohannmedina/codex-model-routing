@@ -34,6 +34,16 @@ The routing skill is intended to apply automatically to nontrivial work. It can 
 $codex-model-routing
 ```
 
+### Optional LiteLLM/Muse probe
+
+The skill can also document and validate access to the local OpenAI-compatible LiteLLM `muse` route. This is not a native Codex model alias and requires the gateway to be reachable from the current environment:
+
+```powershell
+pwsh -File .\scripts\test-muse-access.ps1
+```
+
+The probe must see `muse` in `/v1/models` and receive usable completion content from `/v1/chat/completions`. Override `-BaseUrl`, `-Model`, `-MaxTokens`, or `-TimeoutSec` for another gateway or deployment. It emits only connection and response metadata, not model output or credentials.
+
 The optional `routing-bypass` profile is included as a reference only and is not enabled by the installer.
 
 ## Scope

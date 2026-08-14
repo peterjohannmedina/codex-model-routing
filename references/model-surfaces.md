@@ -21,7 +21,7 @@ Reasoning effort is independent of the model. Prefer the lowest supported effort
 
 Even without a new thread, later turns process relevant retained context. Optimize the amount and relevance of context, not merely the number of thread IDs.
 
-The measurable cost of a model change is the loss of the warm prompt prefix: previously-seen context is billed at a discount that is keyed to the serving model, so a switch re-prices the accumulated transcript as cold input on the next turn. Reasoning-effort changes stay on the same model and keep that prefix. See [switching-economics.md](switching-economics.md) for the break-even analysis and planning checklist.
+Do not claim a measured billing or cache penalty for changing models unless the active Codex surface exposes that evidence. The routing policy treats context transfer, coordination, and rework as real costs; exact cross-model cache behavior remains an evidence boundary. Reasoning-effort changes stay on the same model when the surface supports them. See [switching-economics.md](switching-economics.md) for the break-even analysis and planning checklist.
 
 ## Custom agents
 

@@ -21,6 +21,8 @@
 - Updated the installer and setup prompts to register the personal skill under `%USERPROFILE%\\.codex\\skills`, the active Codex personal-skill location.
 - Removed the machine-specific source path from the setup prompts.
 - Kept Git repository metadata out of the installed skill copy.
+- Documented the optional local LiteLLM/Muse worker surface and added a live probe that verifies both model catalog presence and usable completion output.
+- Corrected the model-surface reference so it does not present unverified cross-model cache billing behavior as measured fact.
 
 ## 2026-08-09
 
