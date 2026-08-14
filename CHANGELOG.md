@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-14
+
+### Changed
+
+- Published the skill as a standalone repository with installation documentation.
+- Updated the installer and setup prompts to register the personal skill under `%USERPROFILE%\\.codex\\skills`, the active Codex personal-skill location.
+- Removed the machine-specific source path from the setup prompts.
+
 ## 2026-08-09
 
 ### Added

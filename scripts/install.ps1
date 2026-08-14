@@ -27,7 +27,7 @@ foreach ($relativePath in $requiredFiles) {
     }
 }
 
-$skillParent = Join-Path $UserRoot '.agents\skills'
+$skillParent = Join-Path $UserRoot '.codex\skills'
 $skillDestination = Join-Path $skillParent 'codex-model-routing'
 $agentDestination = Join-Path $UserRoot '.codex\agents'
 $sourcePrefix = $resolvedSource.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
