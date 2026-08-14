@@ -45,6 +45,7 @@ if ($PSCmdlet.ShouldProcess($skillDestination, 'Install Codex model-routing skil
     if (-not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $skillDestination)) {
         New-Item -ItemType Directory -Force -Path $skillDestination | Out-Null
         Get-ChildItem -LiteralPath $resolvedSource -Force |
+            Where-Object { $_.Name -ne '.git' } |
             Copy-Item -Destination $skillDestination -Recurse -Force
     }
 }
