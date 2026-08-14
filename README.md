@@ -4,7 +4,17 @@ A personal Codex skill for choosing model tier, reasoning effort, and bounded su
 
 ## Install
 
-Clone this repository into a temporary or development directory, then run the installer from its root:
+Clone this repository into a temporary or development directory, then use the installer for your platform.
+
+### macOS or Linux
+
+```sh
+git clone https://github.com/peterjohannmedina/codex-model-routing.git
+cd codex-model-routing
+./scripts/install.sh
+```
+
+### Windows
 
 ```powershell
 git clone https://github.com/peterjohannmedina/codex-model-routing.git
@@ -12,7 +22,7 @@ Set-Location .\codex-model-routing
 pwsh -File .\scripts\install.ps1
 ```
 
-The installer registers the complete skill package at `%USERPROFILE%\.codex\skills\codex-model-routing`, installs the Luna, Terra, and Sol custom-agent profiles under `%USERPROFILE%\.codex\agents`, and merges the marked routing block into `%USERPROFILE%\AGENTS.md`.
+Both installers register the complete skill package at `~/.codex/skills/codex-model-routing`, install the Luna, Terra, and Sol custom-agent profiles under `~/.codex/agents`, and merge the marked routing block into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 

@@ -33,30 +33,21 @@ The canonical templates for this skill are under `assets/agents/`. Installation 
 
 Install the entire `codex-model-routing` directory, not only `SKILL.md`, because the workflow refers to this reference and ships custom-agent templates, a setup prompt, and an installer.
 
-Two personal skill roots exist and they are not interchangeable on every
-machine. Check which one the active Codex build actually loads before
-installing, and prefer the root where the client's other skills already
-live:
-
-- `~/.agents/skills/` — shared, vendor-neutral root used by several tools.
-- `~/.codex/skills/` — Codex's own root.
-
-`scripts/install.ps1` targets `~/.agents/skills/` by default. Override
-`-UserRoot`, or copy the directory manually, when the active client loads
-from `~/.codex/skills/` instead. Installing to the wrong root fails
-silently: the skill simply never appears.
+For a personal Codex installation, use Codex's own skill root:
+`~/.codex/skills/`. The separate `~/.agents/skills/` root is shared by other
+tools and is not an installation target for this package.
 
 For a personal installation:
 
-1. Copy the package to the correct skill root, e.g.
-   `~/.agents/skills/codex-model-routing/` or
-   `~/.codex/skills/codex-model-routing/`.
+1. Copy the package to `~/.codex/skills/codex-model-routing/`.
 2. Copy `assets/agents/*.toml` to `~/.codex/agents/`.
 3. Merge `assets/AGENTS.md.snippet` into the user's home `AGENTS.md` when routing should apply to every nontrivial task under that home directory.
 4. Do not enable `assets/profiles/routing-bypass.config.toml` unless the user explicitly requests that permission profile.
 5. Start a new chat or restart Codex if the updated skill or custom agents are not detected automatically.
 
-On Windows, `scripts/install.ps1` performs steps 1-3 and leaves the optional bypass profile disabled.
+On macOS and Linux, `scripts/install.sh` performs steps 1-3. On Windows,
+`scripts/install.ps1` performs the same steps. Both leave the optional bypass
+profile disabled.
 The complete prompt in `assets/setup-prompt.md` can be pasted into another Codex Desktop chat to perform and verify the setup.
 
 ## Constraints

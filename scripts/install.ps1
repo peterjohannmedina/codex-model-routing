@@ -10,14 +10,14 @@ $ErrorActionPreference = 'Stop'
 $resolvedSource = (Resolve-Path -LiteralPath $SourceRoot).Path
 $requiredFiles = @(
     'SKILL.md',
-    'agents\openai.yaml',
-    'assets\AGENTS.md.snippet',
-    'assets\setup-prompt.md',
-    'assets\agents\luna-efficient.toml',
-    'assets\agents\terra-general.toml',
-    'assets\agents\sol-expert.toml',
-    'references\model-surfaces.md',
-    'references\switching-economics.md'
+    (Join-Path 'agents' 'openai.yaml'),
+    (Join-Path 'assets' 'AGENTS.md.snippet'),
+    (Join-Path 'assets' 'setup-prompt.md'),
+    (Join-Path (Join-Path 'assets' 'agents') 'luna-efficient.toml'),
+    (Join-Path (Join-Path 'assets' 'agents') 'terra-general.toml'),
+    (Join-Path (Join-Path 'assets' 'agents') 'sol-expert.toml'),
+    (Join-Path 'references' 'model-surfaces.md'),
+    (Join-Path 'references' 'switching-economics.md')
 )
 
 foreach ($relativePath in $requiredFiles) {
@@ -27,9 +27,10 @@ foreach ($relativePath in $requiredFiles) {
     }
 }
 
-$skillParent = Join-Path $UserRoot '.codex\skills'
+$codexRoot = Join-Path $UserRoot '.codex'
+$skillParent = Join-Path $codexRoot 'skills'
 $skillDestination = Join-Path $skillParent 'codex-model-routing'
-$agentDestination = Join-Path $UserRoot '.codex\agents'
+$agentDestination = Join-Path $codexRoot 'agents'
 $sourcePrefix = $resolvedSource.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $resolvedSkillDestination = [IO.Path]::GetFullPath($skillDestination)
 
@@ -52,13 +53,13 @@ if ($PSCmdlet.ShouldProcess($skillDestination, 'Install Codex model-routing skil
 
 if ($PSCmdlet.ShouldProcess($agentDestination, 'Install Luna, Terra, and Sol custom-agent profiles')) {
     New-Item -ItemType Directory -Force -Path $agentDestination | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $resolvedSource 'assets\agents') -Filter '*.toml' -File |
+    Get-ChildItem -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'agents') -Filter '*.toml' -File |
         Copy-Item -Destination $agentDestination -Force
 }
 
 if (-not $SkipGlobalInstruction) {
     $agentsPath = Join-Path $UserRoot 'AGENTS.md'
-    $snippet = Get-Content -Raw -LiteralPath (Join-Path $resolvedSource 'assets\AGENTS.md.snippet')
+    $snippet = Get-Content -Raw -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'AGENTS.md.snippet')
     $startMarker = '<!-- codex-model-routing:start -->'
     $endMarker = '<!-- codex-model-routing:end -->'
 
