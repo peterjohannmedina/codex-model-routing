@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added `scripts/install.sh` for native macOS and Linux installation.
+
+### Changed
+
+- Standardized every installer and setup document on Codex's
+  `~/.codex/skills/codex-model-routing` skill path.
+- Made `scripts/install.ps1` construct paths with `Join-Path` components so it
+  also works in PowerShell on macOS and Linux.
+
 ## 2026-08-14
 
 ### Changed
