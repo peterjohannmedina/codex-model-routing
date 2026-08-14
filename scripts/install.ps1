@@ -16,6 +16,7 @@ $requiredFiles = @(
     (Join-Path (Join-Path 'assets' 'agents') 'luna-efficient.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'terra-general.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'sol-expert.toml'),
+    (Join-Path (Join-Path 'assets' 'agents') 'muse-worker.toml'),
     (Join-Path 'references' 'model-surfaces.md'),
     (Join-Path 'references' 'switching-economics.md'),
     (Join-Path 'scripts' 'test-muse-access.ps1')

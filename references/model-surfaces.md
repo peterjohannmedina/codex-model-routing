@@ -27,7 +27,7 @@ Do not claim a measured billing or cache penalty for changing models unless the 
 
 Codex loads personal custom-agent TOML files from `~/.codex/agents/` and project agents from `.codex/agents/`. Required fields are `name`, `description`, and `developer_instructions`. Optional `model` and `model_reasoning_effort` fields pin the route.
 
-The canonical templates for this skill are under `assets/agents/`. Installation must copy them separately to `~/.codex/agents/`; keeping them only inside the skill directory does not register them as custom agents.
+The canonical templates for this skill are under `assets/agents/`. Installation must copy them separately to `~/.codex/agents/`; keeping them only inside the skill directory does not register them as custom agents. `muse-worker.toml` is a provider-backed local worker: it pins `model = "muse"` and `model_provider = "litellm"` inside the child-agent profile, leaving the parent model and global provider unchanged.
 
 ## Package installation
 

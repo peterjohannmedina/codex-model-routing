@@ -53,6 +53,7 @@ for relative_path in \
     assets/agents/luna-efficient.toml \
     assets/agents/terra-general.toml \
     assets/agents/sol-expert.toml \
+    assets/agents/muse-worker.toml \
     references/model-surfaces.md \
     references/switching-economics.md
 do

@@ -77,6 +77,8 @@ pwsh -File .\scripts\test-muse-access.ps1
 
 The probe checks both `/models` catalog presence and a real `/chat/completions` response for the exact `muse` route. Catalog presence alone is not proof of runtime access. The default 1024-token budget is intentional: Muse may emit reasoning before answer content, so a small probe budget can falsely look like a transport failure while the request is still working.
 
+The installer also registers the `muse-worker` custom agent under `~/.codex/agents/`. That agent pins `model = "muse"` to the LiteLLM provider in its own profile, so Codex can assign a bounded subtask to Muse without changing the main-session model or global `config.toml`. Use it when the task is suitable for a local text worker and the live probe passes. Codex custom-agent workflows must be enabled on the active surface; the agent description and this routing policy are selection guidance, not a guarantee that every surface will proactively delegate.
+
 Do not silently substitute Muse for Luna, Terra, or Sol on a task whose quality or data policy requires a native Codex route. If the probe fails, keep the route unavailable and use the normal escalation rules rather than silently falling back to another local model.
 
 ## Decide whether to stay or switch
@@ -121,6 +123,7 @@ Delegate only bounded, independent work that benefits from parallelism, removes 
 - Use `luna-efficient` for batches of deterministic items.
 - Use `terra-general` for exploration and routine implementation.
 - Use `sol-expert` for difficult analysis, security, architecture, or final verification.
+- Use `muse-worker` for bounded local-model summarization, drafting, classification, code reading, or second-opinion work after its live probe passes.
 
 Prefer the smallest context fork or self-contained task packet that fully specifies the child task. Do not copy the entire parent transcript by default. Batch similar small items into one worker, limit workers to independent units and available concurrency, and request distilled evidence instead of raw logs.
 

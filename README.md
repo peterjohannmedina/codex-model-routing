@@ -22,7 +22,7 @@ Set-Location .\codex-model-routing
 pwsh -File .\scripts\install.ps1
 ```
 
-Both installers register the complete skill package at `~/.codex/skills/codex-model-routing`, install the Luna, Terra, and Sol custom-agent profiles under `~/.codex/agents`, and merge the marked routing block into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
+Both installers register the complete skill package at `~/.codex/skills/codex-model-routing`, install the Luna, Terra, Sol, and `muse-worker` custom-agent profiles under `~/.codex/agents`, and merge the marked routing block into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 
@@ -43,6 +43,8 @@ pwsh -File .\scripts\test-muse-access.ps1
 ```
 
 The probe must see `muse` in `/v1/models` and receive usable completion content from `/v1/chat/completions`. Override `-BaseUrl`, `-Model`, `-MaxTokens`, or `-TimeoutSec` for another gateway or deployment. It emits only connection and response metadata, not model output or credentials.
+
+When the probe passes, Codex can select the installed `muse-worker` custom agent for a bounded subtask. This is a provider-backed sub-agent route, not a native model-picker entry: the child agent uses `model = "muse"` and its own LiteLLM provider settings while the parent remains on its current Codex model.
 
 The optional `routing-bypass` profile is included as a reference only and is not enabled by the installer.
 
