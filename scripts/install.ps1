@@ -1,11 +1,15 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$SourceRoot,
     [string]$UserRoot = [Environment]::GetFolderPath('UserProfile'),
     [switch]$SkipGlobalInstruction
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($SourceRoot)) {
+    $SourceRoot = Split-Path -Parent $PSScriptRoot
+}
 
 $resolvedSource = (Resolve-Path -LiteralPath $SourceRoot).Path
 $requiredFiles = @(
@@ -16,10 +20,18 @@ $requiredFiles = @(
     (Join-Path (Join-Path 'assets' 'agents') 'luna-efficient.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'terra-general.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'sol-expert.toml'),
+    (Join-Path (Join-Path 'assets' 'agents') 'astra-integrator.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'muse-worker.toml'),
+    (Join-Path (Join-Path 'assets' 'agents') 'ganglion-worker.toml'),
     (Join-Path 'references' 'model-surfaces.md'),
+    (Join-Path 'references' 'local-workers.md'),
     (Join-Path 'references' 'switching-economics.md'),
-    (Join-Path 'scripts' 'test-muse-access.ps1')
+    (Join-Path 'scripts' 'test-muse-access.ps1'),
+    (Join-Path 'scripts' 'test-ganglion-access.ps1'),
+    (Join-Path 'scripts' 'invoke-ganglion-worker.ps1'),
+    (Join-Path 'scripts' 'sweep-ganglion-resources.ps1'),
+    (Join-Path 'scripts' 'manage-codex-routing-policy.ps1'),
+    (Join-Path (Join-Path 'assets' 'prompts') 'codex-routing.md')
 )
 
 foreach ($relativePath in $requiredFiles) {
@@ -33,6 +45,7 @@ $codexRoot = Join-Path $UserRoot '.codex'
 $skillParent = Join-Path $codexRoot 'skills'
 $skillDestination = Join-Path $skillParent 'codex-model-routing'
 $agentDestination = Join-Path $codexRoot 'agents'
+$promptDestination = Join-Path $codexRoot 'prompts'
 $sourcePrefix = $resolvedSource.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $existingSkillDestination = Get-Item -LiteralPath $skillDestination -Force -ErrorAction SilentlyContinue
 $resolvedSkillDestination = if ($null -ne $existingSkillDestination -and $existingSkillDestination.LinkType -in @('Junction', 'SymbolicLink')) {
@@ -58,10 +71,15 @@ if ($PSCmdlet.ShouldProcess($skillDestination, 'Install Codex model-routing skil
     }
 }
 
-if ($PSCmdlet.ShouldProcess($agentDestination, 'Install Luna, Terra, and Sol custom-agent profiles')) {
+if ($PSCmdlet.ShouldProcess($agentDestination, 'Install native and local-worker custom-agent profiles')) {
     New-Item -ItemType Directory -Force -Path $agentDestination | Out-Null
     Get-ChildItem -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'agents') -Filter '*.toml' -File |
         Copy-Item -Destination $agentDestination -Force
+}
+
+if ($PSCmdlet.ShouldProcess($promptDestination, 'Install the codex-routing slash prompt')) {
+    New-Item -ItemType Directory -Force -Path $promptDestination | Out-Null
+    Copy-Item -LiteralPath (Join-Path (Join-Path (Join-Path $resolvedSource 'assets') 'prompts') 'codex-routing.md') -Destination $promptDestination -Force
 }
 
 if (-not $SkipGlobalInstruction) {
@@ -89,12 +107,13 @@ if (-not $SkipGlobalInstruction) {
     }
 
     if ($PSCmdlet.ShouldProcess($agentsPath, 'Enable global Codex model-routing instruction')) {
-        Set-Content -LiteralPath $agentsPath -Value $updated -Encoding utf8NoBOM
+        Set-Content -LiteralPath $agentsPath -Value $updated -Encoding utf8
     }
 }
 
 Write-Output "Skill: $skillDestination"
 Write-Output "Custom agents: $agentDestination"
+Write-Output "Custom prompts: $promptDestination"
 if ($SkipGlobalInstruction) {
     Write-Output 'Global AGENTS.md instruction: skipped'
 } else {

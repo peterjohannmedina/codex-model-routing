@@ -1,6 +1,6 @@
 ---
 name: codex-model-routing
-description: Route Codex work across GPT-5.6 Luna, Terra, and Sol with context-aware stay-versus-switch decisions, reasoning-effort selection, and up-front agent scoping. Apply automatically at the start of every nontrivial task, and use explicitly when planning work, choosing a Codex model, delegating to subagents, minimizing context-transfer and orchestration cost, estimating token/latency tradeoffs, or deciding whether work should remain in the current thread and model.
+description: Route Codex work across GPT-5.6 Luna, Terra, Sol, and optional GPT-6 Astra, with local LLM worker routes, using context-aware stay-versus-switch decisions, reasoning-effort selection, and up-front agent scoping. Apply automatically at the start of every nontrivial task, and use explicitly when planning work, choosing a Codex model, delegating to subagents, minimizing context-transfer and orchestration cost, estimating token/latency tradeoffs, or deciding whether work should remain in the current thread and model.
 ---
 
 # Codex Model Routing
@@ -33,8 +33,8 @@ When a usage reading cannot be obtained, retain the existing persisted state. Do
 In conservation mode:
 
 - Use **Luna (`gpt-5.6-luna`) at `max` effort** as the main model for every operation.
-- Use Terra or Sol only for planning, or for a tightly scoped intelligence/capability gap that Luna has demonstrably failed to resolve. Keep the stronger-model task packet short and return a distilled result to Luna.
-- Do not use Terra or Sol for routine implementation, exploration, formatting, testing, or review.
+- Use Terra, Sol, or Astra only for planning, or for a tightly scoped intelligence/capability gap that Luna has demonstrably failed to resolve. Keep the stronger-model task packet short and return a distilled result to Luna.
+- Do not use Terra, Sol, or Astra for routine implementation, exploration, formatting, testing, or review.
 - Prefer one coherent Luna turn, targeted reads, and bounded verification; avoid fan-out and model oscillation.
 
 This guard integrates the `cost-tracker` skill as the accounting policy: use it to reduce context waste and batching overhead, but treat plan/billing estimates as secondary to the live usage reading. If the current Codex surface exposes no readable usage telemetry, this is a persisted policy guard rather than a background meter.
@@ -58,10 +58,110 @@ For more than two workers or a multi-phase fan-out, tell the user the proposed a
 | Luna (`gpt-5.6-luna`) | max | Clear, repeatable, high-volume work: extraction, classification, formatting, known-pattern scans, mechanical transformations, and structured summaries. |
 | Terra (`gpt-5.6-terra`) | medium | Everyday engineering: repository exploration, routine fixes, tests from a clear specification, documentation, and standard tool-driven work. |
 | Sol (`gpt-5.6-sol`) | medium or high | Ambiguous or high-value work: multi-file implementation, unclear debugging, architecture, security, consequential review, and polished final judgment. |
+| Astra (`gpt-6-astra`, optional) | high | Sustained, tightly coupled integration and runtime investigation when substantial implementation and verification context needs one owner. |
+
+These are routing policies, not measured performance or price rankings. Use the optional Astra route when the active catalog exposes it and the task benefits from sustained integration. Preserve an explicitly selected Astra session unless the user requests a change or the usage guard applies. Check supported effort levels on the active surface; do not switch merely because a model is newer.
 
 Luna uses `max` effort by default. For Terra and Sol, increase effort before changing models when the task still fits the current model but needs more checking. Use `high` for complex logic and edge cases. Reserve `xhigh`, `max`, or `ultra` for the hardest supported workloads; availability varies by surface.
 
 When uncertain between adjacent routes, choose the stronger route. Never trade correctness or safety for token savings.
+
+## Optional local Ganglion routes
+
+Read [local-workers.md](references/local-workers.md) when configuring endpoints,
+models, credentials, or protocols for the bundled local LLM adapters.
+
+Ganglion is a separate local inference surface, not a native Codex model name.
+Use it for bounded summarization, drafting, classification, code reading, or a
+second opinion when locality or available local capacity makes that useful.
+Treat its output as untrusted worker output; the main Codex session owns the
+requirements, validation, synthesis, and final judgment.
+
+The installed `ganglion-worker` custom agent targets the documented
+Responses-capable LiteLLM gateway route (`ganglion-auto` backed by Ganglion).
+Before assigning work to that profile, run the live probe with
+`scripts/test-ganglion-access.ps1 -WireApi Responses`. The probe must confirm
+both model discovery and a usable bounded Responses completion. Set
+`GANGLION_API_KEY` to a scoped gateway key; never put a token in the profile or
+on a command line. If the gateway is unavailable, keep the profile unavailable
+and use the normal routing rules.
+
+The local Ganglion broker and continuity endpoints expose Chat Completions, so
+they cannot be selected directly by a Codex custom provider whose wire protocol
+is Responses. When the loopback broker is the available local surface, use
+`scripts/test-ganglion-access.ps1 -WireApi ChatCompletions` followed by the
+bounded `scripts/invoke-ganglion-worker.ps1` process route. Its defaults are
+`http://127.0.0.1:8471/v1`, model `ganglion`, and the `HELIOS_API_TOKEN`
+environment variable; override them through script parameters or the documented
+environment variables when the local deployment uses another port or token.
+This process route has no tools and must receive only a self-contained task
+packet. Do not use either Ganglion route for secrets, high-stakes final
+judgment, or tool-heavy edits, and do not silently substitute it for a native
+Codex route.
+
+Before choosing a Ganglion worker, run
+`scripts/sweep-ganglion-resources.ps1`. The sweep is an ordered capacity
+cascade:
+
+Codex remains the harness for this operation: it creates the bounded task
+packet, runs the sweep, invokes the selected worker surface, manages the
+turn, and validates the returned evidence. Do not introduce Hermes, `dsh`, or
+another orchestration agent between Codex and these routes.
+
+1. Check the resident broker at `127.0.0.1:8471/v1` for health, model
+   advertisement, runtime state, in-flight work, leased slots, and queue
+   depth. If it is ready, select it and stop; do not query a remote gateway
+   just to compare routes.
+2. If the resident broker is unavailable rather than occupied, check the
+   resident continuity endpoint at `127.0.0.1:8472/v1`. If the broker reports
+   active or queued work, skip continuity so the same resident host is not
+   oversubscribed.
+3. Only after the resident routes are occupied or unavailable, check the
+   Responses-capable LiteLLM gateway for `ganglion-auto`. The default gateway
+   is `http://192.168.1.216:4000/v1`; override it with
+   `GANGLION_GATEWAY_BASE_URL` when the deployment uses another route.
+
+The sweep returns JSON with `selected` and an ordered `checks` array. By
+default it runs one bounded completion probe on the first capacity-ready
+candidate; use `-SkipCompletion` for a read-only capacity snapshot. A remote
+gateway probe is never reached while the resident broker is ready. If every
+candidate fails, keep the task on the normal native Codex route. Routing
+decisions do not grant permissions or turn a local worker into a native Codex
+model.
+
+## Local worker target and waiting policy
+
+Read the persistent routing policy with
+`scripts/manage-codex-routing-policy.ps1 -Action Get` before planning bounded
+sub-agent inference. The default target is 50% of eligible bounded sub-agent
+tasks through Ganglion-managed local inference, and `wait_for_results` defaults
+to true with a 1,800-second wait budget. This target does not override data
+handling, task suitability, capacity, or the requirement to keep secrets and
+high-stakes final judgment in the parent Codex session.
+
+The installed custom prompt exposes the slash command
+`/prompts:codex-routing`. Use it without an argument for the 50% default, or
+pass a target such as `/prompts:codex-routing 75` or
+`/prompts:codex-routing TARGET_PERCENT=75`. Keep synchronous waiting enabled
+unless the user explicitly changes it. The prompt persists the setting with
+the policy helper and reports the current target and observed share.
+
+For each eligible bounded worker opportunity, prefer a Ganglion route while
+the observed share is below target and the resource sweep returns a usable
+route. Count both the resident process route and the Ganglion-backed LiteLLM
+gateway as Ganglion-managed local inference. After choosing a worker, wait for
+its result before continuing, validate the evidence in the parent session, and
+record the outcome with the policy helper:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\manage-codex-routing-policy.ps1 `
+  -Action Record -EligibleTask -SubagentRoute ganglion
+```
+
+Use `native` for a native Codex sub-agent and `unavailable` when no suitable
+worker route passed the sweep. The target is best effort when Ganglion is
+occupied, unavailable, or unsuitable; do not force a local request to meet a
+percentage.
 
 ## Optional local LiteLLM routes
 
@@ -123,7 +223,11 @@ Delegate only bounded, independent work that benefits from parallelism, removes 
 - Use `luna-efficient` for batches of deterministic items.
 - Use `terra-general` for exploration and routine implementation.
 - Use `sol-expert` for difficult analysis, security, architecture, or final verification.
+- Use `astra-integrator`, when available, for a bounded integration task or root-cause investigation with implementation and verification. Keep file ownership disjoint from other writers and return changed files, checks, and unresolved evidence.
 - Use `muse-worker` for bounded local-model summarization, drafting, classification, code reading, or second-opinion work after its live probe passes.
+- Use `ganglion-worker` for bounded local-model work through the Responses-capable Gateway after its live probe passes.
+- Use the `invoke-ganglion-worker.ps1` process route for bounded direct Chat Completions work after its matching live probe passes.
+- Run `sweep-ganglion-resources.ps1` before either worker route; honor its resident-first selection and do not send work to a remote gateway while the resident broker is ready.
 
 Prefer the smallest context fork or self-contained task packet that fully specifies the child task. Do not copy the entire parent transcript by default. Batch similar small items into one worker, limit workers to independent units and available concurrency, and request distilled evidence instead of raw logs.
 
@@ -132,7 +236,7 @@ Prefer a pinned subagent over switching the main model when the different route 
 ## Escalate without looping
 
 1. Retry at the same route at most once, and only when failure came from a correctable prompt or tool issue.
-2. Otherwise raise reasoning effort when depth is the issue, or escalate Luna -> Terra -> Sol when capability is the issue.
+2. Otherwise raise reasoning effort when depth is the issue, or select Terra, Sol, or optional Astra for the demonstrated capability gap. There is no requirement to try every intermediate route.
 3. Give the stronger route the failed attempt's evidence and a compact current-state packet so it does not repeat the same work.
 4. Stop delegating when coordination costs exceed the remaining work.
 
@@ -141,7 +245,8 @@ Prefer a pinned subagent over switching the main model when the different route 
 - Do not silently change the user's main-session model or global `config.toml`.
 - Prefer installed custom agent profiles when the spawn surface supports them.
 - If the spawn surface cannot select an agent model or role, state that routing is advisory and either work inline or ask before launching a separate `codex exec -m ...` process.
-- Confirm a model exists in the active catalog before pinning it. Fall back Luna -> Terra -> Sol -> current default if a lower tier is unavailable.
+- Confirm a model exists in the active catalog before pinning it. Fall back Luna -> Terra -> Sol -> current default if a lower tier is unavailable. If optional Astra is unavailable, use Sol for bounded expert work or retain the capable current model and report the fallback.
+- Treat Ganglion availability as runtime state: run the ordered resource sweep, require the matching live probe, keep its task packet bounded, and report whether the work used the resident process route or the external custom-agent gateway.
 - Treat `Ultra` as an orchestration/intelligence mode, not a fourth model name.
 
 Read [model-surfaces.md](references/model-surfaces.md) when installing the package, maintaining model names or agent profiles, or reasoning about thread/model behavior on a specific Codex surface.

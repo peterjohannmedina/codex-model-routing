@@ -1,6 +1,6 @@
 # Codex Model Routing
 
-A personal Codex skill for choosing model tier, reasoning effort, and bounded subagents according to task complexity, context-transfer cost, coordination cost, and rework risk.
+A Codex skill for choosing models, reasoning effort, and subagents to fit the task. It weighs capability, available usage, context transfer, and coordination costs, with a built-in option to delegate bounded subtasks to local LLMs.
 
 ## Install
 
@@ -14,15 +14,19 @@ cd codex-model-routing
 ./scripts/install.sh
 ```
 
+The shell installer requires `rsync`.
+
 ### Windows
 
 ```powershell
 git clone https://github.com/peterjohannmedina/codex-model-routing.git
 Set-Location .\codex-model-routing
-pwsh -File .\scripts\install.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
-Both installers register the complete skill package at `~/.codex/skills/codex-model-routing`, install the Luna, Terra, Sol, and `muse-worker` custom-agent profiles under `~/.codex/agents`, and merge the marked routing block into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
+PowerShell 7 (`pwsh`) can run the same installer.
+
+Both installers copy the complete skill to `~/.codex/skills/codex-model-routing`, register the bundled custom-agent profiles, install the routing prompt, and merge the routing instructions into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 
@@ -34,20 +38,24 @@ The routing skill is intended to apply automatically to nontrivial work. It can 
 $codex-model-routing
 ```
 
-### Optional LiteLLM/Muse probe
+The router chooses whether to keep work in the current session or delegate a bounded task. Bundled native profiles cover Luna, Terra, Sol, and an optional Astra integrator; availability depends on the active Codex environment.
 
-The skill can also document and validate access to the local OpenAI-compatible LiteLLM `muse` route. This is not a native Codex model alias and requires the gateway to be reachable from the current environment:
+## Optional local LLM delegation
 
-```powershell
-pwsh -File .\scripts\test-muse-access.ps1
+The router has built-in support for delegating subagent work to local LLMs. This is useful for self-contained tasks such as summarizing documents, classifying items, drafting text, reading code, or providing a second opinion. The main Codex session scopes the task, validates the result, and remains responsible for the final answer.
+
+Connect a compatible local inference service or gateway using the bundled worker profiles and scripts. The router checks availability before assigning work and can prefer local capacity when it is suitable. If no configured local route is usable, work stays on an available native Codex route.
+
+The included Ganglion integration provides capacity-aware route selection and a configurable target for the share of eligible tasks handled locally. Its default target is 50%, with result waiting and outcome tracking enabled. The target is best effort and applies only to suitable bounded work. For example:
+
+```text
+/prompts:codex-routing 75
 ```
 
-The probe must see `muse` in `/v1/models` and receive usable completion content from `/v1/chat/completions`. Override `-BaseUrl`, `-Model`, `-MaxTokens`, or `-TimeoutSec` for another gateway or deployment. It emits only connection and response metadata, not model output or credentials.
-
-When the probe passes, Codex can select the installed `muse-worker` custom agent for a bounded subtask. This is a provider-backed sub-agent route, not a native model-picker entry: the child agent uses `model = "muse"` and its own LiteLLM provider settings while the parent remains on its current Codex model.
-
-The optional `routing-bypass` profile is included as a reference only and is not enabled by the installer.
+See [Local LLM setup](references/local-workers.md) for provider configuration, supported protocols, connectivity checks, and the included Ganglion and Muse adapters. Local inference is optional; installation does not provision an LLM server.
 
 ## Scope
 
-Installation is per local Codex environment or user profile. A GitHub repository is the distribution source; Codex does not automatically load a skill merely because it exists on GitHub. Each machine, account, container, or isolated Codex environment must install the package once before it can discover the skill.
+Install the package once per Codex environment or user profile. Publishing or updating a repository does not update an existing installation; rerun the installer when you want to deploy a newer version.
+
+Routing decisions do not change permissions. The optional `routing-bypass` profile is provided as a reference and is not enabled by the installer.

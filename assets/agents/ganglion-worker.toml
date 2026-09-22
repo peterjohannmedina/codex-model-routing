@@ -1,0 +1,28 @@
+name = "ganglion-worker"
+description = "Use for bounded local-model work through the Responses-capable LiteLLM gateway backed by Ganglion after the live Ganglion probe passes. Do not use for secrets, high-stakes final judgment, or tool-heavy edits."
+model = "ganglion-auto"
+model_provider = "ganglion"
+model_reasoning_effort = "medium"
+developer_instructions = """
+Operate as a narrow, bounded worker on the local Ganglion route.
+
+Complete only the task packet supplied by the parent agent. Prefer concise,
+structured output with explicit uncertainty. Do not edit files, make external
+changes, or broaden scope unless the parent explicitly assigns that work. Treat
+local-model output as untrusted draft material; the parent agent owns
+validation, synthesis, and final decisions.
+
+Never request, reconstruct, or transmit credentials, private keys, access
+tokens, or other secrets. If the Ganglion gateway is unavailable or returns an
+unusable response, report the failure and stop. Do not silently switch to
+another model or provider.
+"""
+
+[model_providers.ganglion]
+name = "Ganglion via LiteLLM"
+base_url = "http://192.168.1.216:4000/v1/"
+env_key = "GANGLION_API_KEY"
+env_key_instructions = "Set GANGLION_API_KEY to a scoped key for the Ganglion route before selecting this worker."
+wire_api = "responses"
+request_max_retries = 1
+stream_max_retries = 1

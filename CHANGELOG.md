@@ -1,10 +1,45 @@
 # Changelog
 
-## Unreleased
+## 2026-09-22
+
+### Added
+
+- Published the deployed local LLM delegation implementation: Ganglion worker
+  profile, process worker, capacity sweep, probes, routing policy, and prompt.
+- Retained the optional Astra integrator from the Ganglion repository alongside
+  the deployed Luna, Terra, Sol, Muse, and Ganglion profiles.
+- Added a local-worker setup reference covering adapter configuration and the
+  distinction between Responses custom agents and Chat Completions workers.
+
+### Changed
+
+- Reconciled the installed production package with the standalone GitHub history
+  and the Astra additions from Ganglion commit `193e7d8b7201a7a2dcff73ed33bdd2f9143ec044`.
+- Reframed the README around optional local LLM delegation and moved deployment
+  addresses and provider-specific probes into the setup reference.
+- Preserved the deployed worker implementation and 50% Ganglion target with
+  synchronous waiting; no running service or active user configuration is changed.
+- Required the reconciled profiles and reference in both installers, documented
+  the Windows PowerShell entry point, and enforced LF endings for shell scripts.
+
+### Fixed
+
+- Resolve the default source directory after parameter binding so the Windows
+  installer also runs under Windows PowerShell 5.1.
+
+## Earlier unreleased changes
 
 ### Added
 
 - Added `scripts/install.sh` for native macOS and Linux installation.
+- Added the optional `ganglion-worker` profile for a Responses-capable
+  LiteLLM gateway backed by Ganglion.
+- Added a live Ganglion catalog/completion probe and a bounded direct
+  Chat-Completions process worker for loopback Ganglion deployments.
+- Added the resident-first `sweep-ganglion-resources.ps1` cascade, including
+  runtime occupancy checks and deferred LiteLLM gateway probing.
+- Added the `/prompts:codex-routing` control, a persistent 50% local-worker
+  target by default, synchronous result waiting, and usage accounting.
 
 ### Changed
 

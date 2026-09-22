@@ -53,9 +53,18 @@ for relative_path in \
     assets/agents/luna-efficient.toml \
     assets/agents/terra-general.toml \
     assets/agents/sol-expert.toml \
+    assets/agents/astra-integrator.toml \
     assets/agents/muse-worker.toml \
+    assets/agents/ganglion-worker.toml \
     references/model-surfaces.md \
-    references/switching-economics.md
+    references/local-workers.md \
+    references/switching-economics.md \
+    scripts/test-muse-access.ps1 \
+    scripts/test-ganglion-access.ps1 \
+    scripts/invoke-ganglion-worker.ps1 \
+    scripts/sweep-ganglion-resources.ps1 \
+    scripts/manage-codex-routing-policy.ps1 \
+    assets/prompts/codex-routing.md
 do
     [ -f "$source_root/$relative_path" ] || {
         printf 'Router package is incomplete: missing %s\n' "$relative_path" >&2
@@ -66,6 +75,7 @@ done
 skill_parent=$user_root/.codex/skills
 skill_destination=$skill_parent/codex-model-routing
 agent_destination=$user_root/.codex/agents
+prompt_destination=$user_root/.codex/prompts
 
 case "$skill_destination" in
     "$source_root"|"$source_root"/*)
@@ -74,12 +84,13 @@ case "$skill_destination" in
         ;;
 esac
 
-mkdir -p "$skill_destination" "$agent_destination"
+mkdir -p "$skill_destination" "$agent_destination" "$prompt_destination"
 
 # rsync ships with macOS and preserves the package layout while excluding Git
 # metadata, matching the PowerShell installer's behavior.
 rsync -a --exclude=.git "$source_root/" "$skill_destination/"
 cp "$source_root"/assets/agents/*.toml "$agent_destination/"
+cp "$source_root"/assets/prompts/codex-routing.md "$prompt_destination/"
 
 if [ "$skip_global_instruction" = false ]; then
     agents_path=$user_root/AGENTS.md
@@ -107,6 +118,7 @@ fi
 
 printf 'Skill: %s\n' "$skill_destination"
 printf 'Custom agents: %s\n' "$agent_destination"
+printf 'Custom prompts: %s\n' "$prompt_destination"
 if [ "$skip_global_instruction" = true ]; then
     printf 'Global AGENTS.md instruction: skipped\n'
 else

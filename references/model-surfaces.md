@@ -10,6 +10,11 @@ Verified against the local Codex manual on 2026-08-04.
 
 Reasoning effort is independent of the model. Prefer the lowest supported effort that meets the quality bar.
 
+The optional `astra-integrator` profile preserves the Gitea Astra route
+(`gpt-6-astra`, `high`) for sustained integration and runtime investigation.
+Use it only when the active model catalog exposes it; inclusion in this package
+does not establish availability or require changing the parent model.
+
 ## Thread and model behavior
 
 - The ChatGPT desktop app exposes model and reasoning controls beneath the composer.
@@ -28,6 +33,26 @@ Do not claim a measured billing or cache penalty for changing models unless the 
 Codex loads personal custom-agent TOML files from `~/.codex/agents/` and project agents from `.codex/agents/`. Required fields are `name`, `description`, and `developer_instructions`. Optional `model` and `model_reasoning_effort` fields pin the route.
 
 The canonical templates for this skill are under `assets/agents/`. Installation must copy them separately to `~/.codex/agents/`; keeping them only inside the skill directory does not register them as custom agents. `muse-worker.toml` is a provider-backed local worker: it pins `model = "muse"` and `model_provider = "litellm"` inside the child-agent profile, leaving the parent model and global provider unchanged.
+
+`ganglion-worker.toml` is a provider-backed local worker. It pins
+`model = "ganglion-auto"` to a Responses-capable LiteLLM provider whose
+upstream route is Ganglion, and reads the client key from `GANGLION_API_KEY`.
+The installed Ganglion broker itself currently exposes Chat Completions, so the
+direct loopback path uses `scripts/invoke-ganglion-worker.ps1` instead of a
+Codex provider profile. Both paths require a live probe before use.
+
+Use `scripts/sweep-ganglion-resources.ps1` as the route selector. It reads the
+resident runtime and queue signals before checking the continuity endpoint or
+the external LiteLLM gateway, so a ready local runtime short-circuits the
+cascade and an occupied runtime causes the search to move outward.
+
+The routing policy is persisted under the Codex state directory. Its default
+is to target Ganglion-managed local inference for at least 50% of eligible
+bounded sub-agent tasks and to wait synchronously for worker results. Use the
+`/prompts:codex-routing` custom prompt to change the target.
+
+See [local-workers.md](local-workers.md) for endpoint configuration, protocol
+requirements, and the bundled local adapters.
 
 ## Package installation
 
