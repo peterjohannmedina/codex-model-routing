@@ -26,6 +26,8 @@
 
 - Resolve the default source directory after parameter binding so the Windows
   installer also runs under Windows PowerShell 5.1.
+- Read instruction files as UTF-8 so Windows PowerShell preserves non-ASCII
+  text when merging the global routing block.
 
 ## Earlier unreleased changes
 

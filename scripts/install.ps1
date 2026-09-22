@@ -84,12 +84,12 @@ if ($PSCmdlet.ShouldProcess($promptDestination, 'Install the codex-routing slash
 
 if (-not $SkipGlobalInstruction) {
     $agentsPath = Join-Path $UserRoot 'AGENTS.md'
-    $snippet = Get-Content -Raw -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'AGENTS.md.snippet')
+    $snippet = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'AGENTS.md.snippet')
     $startMarker = '<!-- codex-model-routing:start -->'
     $endMarker = '<!-- codex-model-routing:end -->'
 
     $existing = if (Test-Path -LiteralPath $agentsPath) {
-        Get-Content -Raw -LiteralPath $agentsPath
+        Get-Content -Raw -Encoding utf8 -LiteralPath $agentsPath
     } else {
         ''
     }
