@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, parse_qs
 import routing_decision as core
 import routing_runtime as runtime
 import routing_state as state
+import routing_otel as otel
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/dashboard'
 
@@ -46,6 +47,8 @@ class Store:
             raise ValueError('state_must_be_outside_repository')
         self.path = self.root / 'config.json'
         self.lock = threading.Lock()
+        self.otel_status = {'enabled': False, 'last_received_at': None, 'accepted_records': 0,
+                            'ignored_records': 0, 'rejected_records': 0, 'exporter_configuration': 'unverified'}
 
     def config(self):
         config = safe_config(core.load_file(self.path)) if self.path.is_file() else safe_config({'schema_version': 1})
@@ -92,8 +95,11 @@ class Store:
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
-    def __init__(self, port, store):
+    def __init__(self, port, store, otel_capability=None):
         self.store = store
+        self.otel_capability = otel.capability(otel_capability) if otel_capability is not None else None
+        self.otel_lock = threading.Lock()
+        self.store.otel_status['enabled'] = self.otel_capability is not None
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
         self.bootstrap = secrets.token_urlsafe(32)
@@ -210,12 +216,15 @@ class Handler(BaseHTTPRequestHandler):
                 query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
                 if set(query) - {'session'} or any(len(v) != 1 for v in query.values()): raise ValueError()
                 session = state.identifier(query['session'][0]) if 'session' in query else None
-                return self.reply(200, self.server.store.snapshot(session))
+                snapshot = self.server.store.snapshot(session)
+                with self.server.otel_lock: snapshot['otel_receiver'] = dict(self.server.store.otel_status)
+                return self.reply(200, snapshot)
             return self.reply(404, {'error': 'not_found'})
         except (ValueError, TypeError, RecursionError, OSError, state.sqlite3.Error):
             return self.reply(503, {'error': 'configuration_or_ledger_unavailable'})
 
     def do_POST(self):
+        if self.path == '/v1/logs': return self.otel_logs()
         bootstrap = self.path == '/api/auth'
         if bootstrap:
             if not self.allowed(session=False) or self.headers.get('Origin') != self.server.origin:
@@ -248,16 +257,52 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, state.sqlite3.Error):
             return self.reply(503, {'error': 'storage_unavailable'})
 
+    def otel_logs(self):
+        secret = self.server.otel_capability
+        if secret is None: return self.reply(404, {'error': 'not_found'})
+        # Dedicated native exporter capability; browser cookie/CSRF never grants
+        # ingest permission. Browser Origin/Fetch headers are always rejected.
+        if (self.headers.get_all('Host', []) != [urlsplit(self.server.origin).netloc]
+                or len(self.headers.get_all(otel.HEADER, [])) != 1
+                or not hmac.compare_digest(self.headers.get(otel.HEADER, '').encode('utf-8'), secret.encode('ascii'))
+                or self.headers.get('Origin') is not None or self.headers.get('Sec-Fetch-Site') is not None):
+            return self.reply(403, {'error': 'forbidden_exporter'})
+        if (self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding')
+                or self.headers.get('Transfer-Encoding')):
+            return self.reply(415, {'error': 'uncompressed_json_required'})
+        try:
+            if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
+            length = int(self.headers['Content-Length'])
+            if not 1 <= length <= otel.MAX_BYTES: return self.reply(413, {'error': 'body_too_large'})
+            raw = self.rfile.read(length)
+            if len(raw) != length: raise ValueError()
+            config, _ = self.server.store.config()
+            settings = state.LedgerSettings.parse(config['observability'])
+            if settings.enabled:
+                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings))
+                with self.server.otel_lock:
+                    status = self.server.store.otel_status
+                    status['last_received_at'] = state.dt.datetime.now(state.dt.timezone.utc).isoformat()
+                    for field in ('accepted', 'ignored', 'rejected'): status[field + '_records'] += counts[field]
+            # Empty OTLP ExportLogsServiceResponse; never echo raw records.
+            return self.reply(200, {})
+        except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
+            return self.reply(400, {'error': 'invalid_otlp_logs'})
+        except (OSError, state.sqlite3.Error):
+            return self.reply(503, {'error': 'storage_unavailable'})
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', type=Path, default=state.state_root())
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--open-browser', action='store_true', help='Open the private one-use launch file in your browser')
+    parser.add_argument('--otel-token-file', type=Path, help='Opt-in private local exporter capability file; never a provider key')
     args = parser.parse_args(argv)
     try:
         if not 0 <= args.port <= 65535: raise ValueError()
-        server = Server(args.port, Store(args.state_dir))
+        token = args.otel_token_file.read_text(encoding='ascii').strip() if args.otel_token_file else None
+        server = Server(args.port, Store(args.state_dir), token)
         launch = server.create_launch_file()
         print('Routing dashboard: ' + server.origin + ' (local browser authorization required)', flush=True)
         print('Open this private one-use launch file within 5 minutes: ' + str(launch), flush=True)

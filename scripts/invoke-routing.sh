@@ -6,6 +6,7 @@ entry=routing_runtime.py
 case "${1:-}" in
     dashboard) entry=routing_dashboard.py; shift ;;
     collect-codex) entry=collect_codex_json.py; shift ;;
+    telemetry-setup) entry=routing_otel_setup.py; shift ;;
 esac
 if [ -n "${CODEX_ROUTING_PYTHON:-}" ]; then
     exec "$CODEX_ROUTING_PYTHON" -B "$script_dir/$entry" "$@"
