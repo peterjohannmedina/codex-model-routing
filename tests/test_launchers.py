@@ -141,6 +141,7 @@ class UnixInstall(unittest.TestCase):
             source = user / 'source'
             shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns('.git', '__pycache__'))
             (source / '.env').write_text('synthetic excluded fixture')
+            (source / '.dashboard-launch-synthetic.html').write_text('synthetic private bootstrap fixture')
             (source / 'scripts' / 'synthetic.dpapi').write_text('synthetic excluded fixture')
             env = dict(os.environ, CODEX_HOME=str(user / '.codex'), CODEX_ROUTING_PYTHON=sys.executable)
             install = subprocess.run(['sh', str(source / 'scripts' / 'install.sh'), '--user-root', str(user)],
@@ -148,14 +149,23 @@ class UnixInstall(unittest.TestCase):
             self.assertEqual(install.returncode, 0, install.stderr)
             skill = user / '.codex' / 'skills' / 'codex-model-routing'
             self.assertFalse((skill / '.env').exists())
+            self.assertFalse((skill / '.dashboard-launch-synthetic.html').exists())
             self.assertFalse((skill / 'scripts' / 'synthetic.dpapi').exists())
             self.assertTrue((user / '.codex' / 'AGENTS.md').exists())
             self.assertFalse((user / '.codex' / 'agents' / 'muse-worker.toml').exists())
             self.assertFalse((user / '.codex' / 'routing').exists())
-            for name in ('Invoke-Routing.ps1', 'Set-RoutingApiKey.ps1', 'routing_runtime.py', 'invoke-routing.sh'):
+            for name in ('Invoke-Routing.ps1', 'Set-RoutingApiKey.ps1', 'routing_runtime.py', 'invoke-routing.sh',
+                         'routing_state.py', 'routing_dashboard.py', 'collect_codex_json.py',
+                         'Resolve-RoutingPython.ps1', 'Start-RoutingDashboard.ps1'):
                 self.assertTrue((skill / 'scripts' / name).exists())
             result = subprocess.run(['sh', str(skill / 'scripts' / 'invoke-routing.sh'),
                 str(skill / 'assets' / 'routing-packet.example.json'), '--offline'],
                 capture_output=True, text=True, env=env, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)['provenance']['used_provider'], 'rules')
+            collected = subprocess.run(['sh', str(skill / 'scripts' / 'invoke-routing.sh'), 'collect-codex',
+                '--stream-id', '22222222-2222-4222-8222-222222222222'],
+                input='{"type":"turn.completed","usage":{"input_tokens":0,"output_tokens":1}}\n',
+                capture_output=True, text=True, env=env, timeout=15)
+            self.assertEqual(collected.returncode, 0, collected.stderr)
+            self.assertTrue((user / '.codex' / 'routing' / 'usage.sqlite3').exists())

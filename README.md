@@ -62,6 +62,52 @@ Both installers copy the complete skill, including launchers and configuration e
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 
+## Local dashboard and live observations
+
+![Routing dashboard overview with eight synthetic requests across two demo sessions, separate usage totals, activity chart, and labeled cost estimates.](docs/images/dashboard-overview.png)
+
+*Actual dashboard rendered in Chromium with synthetic demo data. The values are
+illustrative; no provider calls, real account activity or measured bills were used.*
+See [capture provenance and reproduction steps](references/dashboard-screenshots.md).
+
+<details>
+<summary>Provider controls and activity screenshots (synthetic demo)</summary>
+
+![Dashboard provider controls showing independent Decisions and local LLM settings, historical observations, and local history retention controls.](docs/images/dashboard-providers.png)
+
+*Saved provider settings and historical observations. Saving settings does not
+run inference or grant spending permission.*
+
+![Dashboard activity ledger with eight synthetic requests and one expanded local execution showing dummy identifiers, model and effort, execution status, and separate evaluator and downstream usage.](docs/images/dashboard-activity.png)
+
+*Synthetic activity with dummy identifiers and illustrative usage. A recommendation
+is displayed separately from an observed execution.*
+
+</details>
+
+One localhost dashboard aggregates the instrumented runtime and opt-in Codex
+exec JSON streams. It includes persistent provider controls, session drilldown,
+retained daily totals, model/effort and override/fallback metadata, separate
+evaluator/downstream usage, and labeled cost estimates. It refreshes every two
+seconds without provider health checks or toggle-triggered execution.
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1 -OpenBrowser
+```
+
+```sh
+sh scripts/invoke-routing.sh dashboard --open-browser
+```
+
+The launcher opens a private one-use authorization file, then the dashboard at
+`http://127.0.0.1:8765`. Provider credentials are never read by the
+dashboard. The instrumented runtime keeps a bounded local metadata ledger by
+default (7 days / 500 requests), with disable/clear controls and no external
+export. Existing older/private adapters, arbitrary already-open TUI sessions and
+the ChatGPT app are unobserved. A recommendation does not switch a running CLI
+model or prove execution. See [setup, privacy and supported sources](references/dashboard.md)
+and the [dashboard requirements](references/dashboard-prd.md).
+
 ## Usage
 
 The routing skill is intended to apply automatically to nontrivial work. It can also be invoked explicitly with:

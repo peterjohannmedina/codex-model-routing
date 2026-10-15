@@ -256,7 +256,7 @@ class OptionalProviders(unittest.TestCase):
                     return {'data': [{'id': 'example-model'}]}
                 output = io.StringIO()
                 argv = ['packet.json', '--config', 'config.json', '--preflight-only',
-                        '--execute-local', '--allow-local-inference', '--allow-api']
+                        '--execute-local', '--allow-local-inference', '--allow-api', '--no-ledger']
                 if offline: argv.append('--offline')
                 with (patch.object(Path, 'is_file', return_value=True),
                       patch.object(core, 'load_file', side_effect=[raw, local_packet()]),

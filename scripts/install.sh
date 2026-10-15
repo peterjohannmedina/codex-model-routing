@@ -65,6 +65,14 @@ for relative_path in \
     assets/routing-packet.example.json \
     scripts/routing_decision.py \
     scripts/routing_runtime.py \
+    scripts/routing_state.py \
+    scripts/routing_dashboard.py \
+    scripts/collect_codex_json.py \
+    scripts/Start-RoutingDashboard.ps1 \
+    scripts/Resolve-RoutingPython.ps1 \
+    assets/dashboard/index.html \
+    assets/dashboard/app.js \
+    assets/dashboard/style.css \
     scripts/Invoke-Routing.ps1 \
     scripts/Set-RoutingApiKey.ps1 \
     scripts/invoke-routing.sh \
@@ -103,7 +111,7 @@ mkdir -p "$skill_destination" "$agent_destination" "$prompt_destination"
 
 # rsync ships with macOS and preserves the package layout while excluding Git
 # metadata, matching the PowerShell installer's behavior.
-rsync -a --exclude=.git --exclude=__pycache__ --exclude='*.pyc' --exclude='*.dpapi' --exclude='.env*' "$source_root/" "$skill_destination/"
+rsync -a --exclude=.git --exclude=__pycache__ --exclude='*.pyc' --exclude='*.dpapi' --exclude='.env*' --exclude='usage.sqlite3*' --exclude='.dashboard-launch-*' "$source_root/" "$skill_destination/"
 for profile in luna-efficient sol-general terra-general sol-expert astra-integrator; do
     cp "$source_root/assets/agents/$profile.toml" "$agent_destination/"
 done

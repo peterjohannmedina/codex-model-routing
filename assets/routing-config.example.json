@@ -16,5 +16,12 @@
     "efforts": ["default"],
     "allow_remote": false,
     "prefer_when_eligible": false
+  },
+  "observability": {
+    "enabled": true,
+    "retention_days": 7,
+    "max_events": 500,
+    "local_input_usd_per_million": null,
+    "local_output_usd_per_million": null
   }
 }

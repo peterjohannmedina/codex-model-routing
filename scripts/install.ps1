@@ -28,6 +28,14 @@ $requiredFiles = @(
     (Join-Path 'assets' 'routing-packet.example.json'),
     (Join-Path 'scripts' 'routing_decision.py'),
     (Join-Path 'scripts' 'routing_runtime.py'),
+    (Join-Path 'scripts' 'routing_state.py'),
+    (Join-Path 'scripts' 'routing_dashboard.py'),
+    (Join-Path 'scripts' 'collect_codex_json.py'),
+    (Join-Path 'scripts' 'Start-RoutingDashboard.ps1'),
+    (Join-Path 'scripts' 'Resolve-RoutingPython.ps1'),
+    'assets/dashboard/index.html',
+    'assets/dashboard/app.js',
+    'assets/dashboard/style.css',
     (Join-Path 'scripts' 'Invoke-Routing.ps1'),
     (Join-Path 'scripts' 'Set-RoutingApiKey.ps1'),
     (Join-Path 'scripts' 'invoke-routing.sh'),
@@ -74,7 +82,8 @@ function Copy-RoutingPackage {
     param([string]$From, [string]$To)
     foreach ($entry in Get-ChildItem -LiteralPath $From -Force) {
         if ($entry.Name -eq '.git' -or $entry.Name -eq '__pycache__' -or
-            $entry.Name -like '*.pyc' -or $entry.Name -like '*.dpapi' -or $entry.Name -like '.env*') { continue }
+            $entry.Name -like '*.pyc' -or $entry.Name -like '*.dpapi' -or $entry.Name -like '.env*' -or
+            $entry.Name -like 'usage.sqlite3*' -or $entry.Name -like '.dashboard-launch-*') { continue }
         if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Package links are not supported by this installer.' }
         if ($entry.PSIsContainer) {
             $childDestination = Join-Path $To $entry.Name
