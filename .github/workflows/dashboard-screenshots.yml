@@ -1,0 +1,41 @@
+name: Synthetic dashboard screenshots
+on:
+  pull_request:
+    paths:
+      - 'assets/dashboard/**'
+      - 'scripts/routing_dashboard.py'
+      - 'scripts/routing_state.py'
+      - 'tests/capture_dashboard.py'
+      - 'tests/dashboard_screenshot_fixture.py'
+      - 'tests/fixtures/dashboard-screenshot.json'
+      - 'tests/requirements-screenshots.txt'
+      - '.github/workflows/dashboard-screenshots.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install CI-only browser dependency
+        run: python -m pip install -r tests/requirements-screenshots.txt
+      - name: Install matching Chromium in CI
+        run: python -m playwright install --with-deps chromium
+      - name: Capture reviewed UI with public synthetic state
+        run: python -B tests/capture_dashboard.py --output-dir screenshot-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-dashboard-screenshots
+          path: |
+            screenshot-artifacts/*.png
+            screenshot-artifacts/provenance.json
+          if-no-files-found: error
+          retention-days: 7
