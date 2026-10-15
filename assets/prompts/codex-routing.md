@@ -1,25 +1,21 @@
 ---
-description: Set the Codex local LLM sub-agent target percentage and synchronous wait policy.
-argument-hint: [TARGET_PERCENT]
+description: Inspect or configure native routing and optional decision/local providers.
+argument-hint: [status or requested configuration change]
 ---
 
-Update the persistent Codex model-routing policy for this chat and future work.
+Use the codex-model-routing skill to inspect routing or apply the user's requested configuration change.
 
 Arguments supplied after this command: $ARGUMENTS
 
 Interpret the arguments as follows:
 
-- No argument means a local LLM sub-agent target of 50%.
-- A bare integer means that target percentage, from 0 through 100.
-- `TARGET_PERCENT=75` sets the target to 75%.
-- Keep `WAIT_FOR_RESULTS=true` unless the user explicitly asks to disable synchronous waiting.
+- No argument or `status` means report configuration and available native model/effort pairs without changing anything or contacting providers.
+- Native routing works without extra providers. Decisions and generic local execution are independently optional and disabled by default.
+- Read `references/local-workers.md` for the external configuration path and packaged launchers. Preserve existing user configuration and named local profiles.
+- Apply only the requested changes. Enabling a provider does not authorize metered requests or local inference; retain the separate execution consent gates.
+- For a legacy numeric local-share request, read `references/legacy-local-workers.md` and explain its deployment-specific policy before making the requested change.
 
-Use the installed `manage-codex-routing-policy.ps1` helper to persist the
-resolved target and wait policy. Then read back the JSON state and report the
-target, wait setting, current eligible-task count, and current Ganglion share.
-
-The target applies to eligible bounded sub-agent inference tasks. Do not force
-local inference for secrets, high-stakes final judgment, tool-heavy edits, or
-tasks where the resource sweep reports no usable route. When a local worker is
-selected, wait for its result before continuing and validate the returned
-evidence in the parent Codex session.
+Honor explicit model/effort overrides, require-local, budgets and permissions.
+When a worker is authorized and selected, wait for its bounded result and
+validate the evidence in the parent Codex session. Report the concrete changes
+and any constraints that prevented the requested configuration.

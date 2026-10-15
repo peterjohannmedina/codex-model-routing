@@ -4,7 +4,7 @@ set -eu
 
 usage() {
     cat <<'EOF'
-Usage: scripts/install.sh [--source-root PATH] [--user-root PATH] [--skip-global-instruction]
+Usage: scripts/install.sh [--source-root PATH] [--user-root PATH] [--skip-global-instruction] [--include-legacy-local-profiles]
 
 Installs the skill at USER_ROOT/.codex/skills/codex-model-routing, the custom
 agent profiles at USER_ROOT/.codex/agents, and—unless skipped—the marked
@@ -16,6 +16,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 source_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
 user_root=${HOME:?HOME must be set, or pass --user-root}
 skip_global_instruction=false
+include_legacy_local_profiles=false
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -31,6 +32,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --skip-global-instruction)
             skip_global_instruction=true
+            shift
+            ;;
+        --include-legacy-local-profiles)
+            include_legacy_local_profiles=true
             shift
             ;;
         -h|--help)
@@ -55,19 +60,17 @@ for relative_path in \
     assets/agents/sol-expert.toml \
     assets/agents/sol-general.toml \
     assets/agents/astra-integrator.toml \
-    assets/agents/muse-worker.toml \
-    assets/agents/ganglion-worker.toml \
     references/model-surfaces.md \
     references/decision-providers.md \
     assets/routing-packet.example.json \
     scripts/routing_decision.py \
+    scripts/routing_runtime.py \
+    scripts/Invoke-Routing.ps1 \
+    scripts/Set-RoutingApiKey.ps1 \
+    scripts/invoke-routing.sh \
+    assets/routing-config.example.json \
     references/local-workers.md \
     references/switching-economics.md \
-    scripts/test-muse-access.ps1 \
-    scripts/test-ganglion-access.ps1 \
-    scripts/invoke-ganglion-worker.ps1 \
-    scripts/sweep-ganglion-resources.ps1 \
-    scripts/manage-codex-routing-policy.ps1 \
     assets/prompts/codex-routing.md
 do
     [ -f "$source_root/$relative_path" ] || {
@@ -75,6 +78,14 @@ do
         exit 1
     }
 done
+
+if [ "$include_legacy_local_profiles" = true ]; then
+    for legacy_path in assets/legacy-agents/muse-worker.toml assets/legacy-agents/ganglion-worker.toml \
+        scripts/test-muse-access.ps1 scripts/test-ganglion-access.ps1 scripts/invoke-ganglion-worker.ps1 \
+        scripts/sweep-ganglion-resources.ps1 scripts/manage-codex-routing-policy.ps1; do
+        [ -f "$source_root/$legacy_path" ] || { printf 'Missing legacy file: %s\n' "$legacy_path" >&2; exit 1; }
+    done
+fi
 
 skill_parent=$user_root/.codex/skills
 skill_destination=$skill_parent/codex-model-routing
@@ -92,8 +103,17 @@ mkdir -p "$skill_destination" "$agent_destination" "$prompt_destination"
 
 # rsync ships with macOS and preserves the package layout while excluding Git
 # metadata, matching the PowerShell installer's behavior.
-rsync -a --exclude=.git "$source_root/" "$skill_destination/"
-cp "$source_root"/assets/agents/*.toml "$agent_destination/"
+rsync -a --exclude=.git --exclude=__pycache__ --exclude='*.pyc' --exclude='*.dpapi' --exclude='.env*' "$source_root/" "$skill_destination/"
+for profile in luna-efficient sol-general terra-general sol-expert astra-integrator; do
+    cp "$source_root/assets/agents/$profile.toml" "$agent_destination/"
+done
+if [ "$include_legacy_local_profiles" = true ]; then
+    for profile in muse-worker ganglion-worker; do
+        if [ ! -e "$agent_destination/$profile.toml" ]; then
+            cp "$source_root/assets/legacy-agents/$profile.toml" "$agent_destination/"
+        fi
+    done
+fi
 cp "$source_root"/assets/prompts/codex-routing.md "$prompt_destination/"
 
 if [ "$skip_global_instruction" = false ]; then

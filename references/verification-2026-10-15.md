@@ -1,5 +1,54 @@
 # Implementation verification — 2026-10-15
 
+## Portable optional-provider iteration
+
+Release branch: `feat/portable-provider-routing`, based on merged `85a0c44`
+plus installer discovery fix `54a2703`. The PR records the exact release head.
+The sections below this iteration record describe the earlier merged work.
+
+The recommended design is a configured generic local execution adapter plus
+opt-in legacy compatibility. A service-specific default would require other
+users to reproduce one deployment; an orchestration service would add an
+unverified dispatch contract. The existing provider interface and native
+fallback remain sufficient for this release.
+
+- Both optional providers default off. The 2x2 local/Decisions matrix is tested,
+  including a native-only baseline with no key, server or additional package.
+- Generic endpoint/model/effort configuration admits only eligible pairs.
+  Readiness is model advertisement, not proof of inference quality or capacity.
+  Explicit bounded text execution has separate authorization and no native
+  execution fallback. Require-local and binding overrides stop on failure.
+- Provider timeouts, unreachable endpoints, missing/invalid authentication,
+  refusals, malformed output, hard caps, remote opt-in and compatibility routes
+  have offline regression coverage. Local execution's wait deadline includes
+  readiness; budget-excluded choices are not probed.
+- Windows clean installation runs twice in an isolated user root, preserves
+  unrelated global instructions and existing named local profiles, installs all
+  launchers, and excludes synthetic `.env`/DPAPI fixtures. The installed launcher
+  runs without provider configuration. Unix has the equivalent CI fixture.
+- The 51-test suite passes on this Windows/Python 3.12 host with the one Unix
+  test skipped. Windows DPAPI tests use a synthetic value and a fake child that
+  checks a boolean; they never use a real credential or network transport.
+- Git Bash syntax checks pass for both shell scripts; `git diff --check` passes.
+  Read the new PR checks for the final exact-head Windows/Ubuntu x Python
+  3.11/3.12 matrix result. No packages or runtimes were installed here.
+
+Peter's installed package remains the earlier merged `85a0c44` with his private
+launcher repair and user-owned named profiles. This release iteration does not
+install, merge or alter those files. A previously authorized one-call HTTP 200
+smoke belongs to its recorded private wrapper revision, not this release.
+There are no new metered calls or real credential reads in this iteration.
+
+Live validation of this release would need separately authorized endpoint/data
+and spending scope, existing credentials and account access, outbound transport,
+and a deliberately bounded task. A hard evaluator token/dollar ceiling still
+blocks Decisions because a complete Decisions preflight counter is unverified.
+Responses input-token counts do not establish that bound. Generic local support
+requires a compatible advertised model and Chat Completions protocol; it is not
+a quality benchmark or a native Codex dispatcher.
+
+## Earlier merged iteration
+
 Base commit: `a41de9d` on `main`. Work isolated in a fresh clone and branch
 `feat/decisions-routing`; no unrelated checkout or HeurChain operations changed.
 

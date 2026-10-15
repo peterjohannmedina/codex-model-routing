@@ -20,7 +20,7 @@ another model or provider.
 
 [model_providers.ganglion]
 name = "Ganglion via LiteLLM"
-base_url = "http://192.168.1.216:4000/v1/"
+base_url = "http://127.0.0.1:8000/v1/"
 env_key = "GANGLION_API_KEY"
 env_key_instructions = "Set GANGLION_API_KEY to a scoped key for the Ganglion route before selecting this worker."
 wire_api = "responses"

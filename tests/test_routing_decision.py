@@ -2,6 +2,7 @@ import copy
 from dataclasses import replace
 import io
 import json
+import shutil
 from pathlib import Path
 import sys
 import subprocess
@@ -179,7 +180,7 @@ class RoutingTests(unittest.TestCase):
             with self.subTest(override=override), self.assertRaisesRegex(routing.RoutingError, "no_admissible"):
                 routing.Request.parse(packet(), routing.Overrides.parse(override))
         with self.assertRaises(routing.RoutingError):
-            routing.Overrides.parse({"model": "gpt-6-terra"})
+            routing.Request.parse(packet(), routing.Overrides.parse({"model": "gpt-6-terra"}))
 
     def test_conservation_is_external_to_decisions_and_overrides(self):
         value = packet()
@@ -418,6 +419,10 @@ class PackageTests(unittest.TestCase):
     def test_installer_updates_codex_global_guidance_and_preserves_other_instructions(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
             user = Path(directory)
+            source = user / 'source'
+            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns('.git', '__pycache__'))
+            (source / '.env').write_text('synthetic excluded fixture')
+            (source / 'scripts' / 'synthetic.dpapi').write_text('synthetic excluded fixture')
             (user / '.codex').mkdir()
             legacy = user / 'AGENTS.md'
             legacy.write_text('Preserve unrelated user-root instructions.\n', encoding='utf-8')
@@ -426,7 +431,7 @@ class PackageTests(unittest.TestCase):
             global_file.write_text(unrelated, encoding='utf-8')
             for _ in range(2):
                 result = subprocess.run(['powershell.exe', '-NoProfile', '-File',
-                    str(ROOT / 'scripts' / 'install.ps1'), '-UserRoot', str(user)],
+                    str(source / 'scripts' / 'install.ps1'), '-UserRoot', str(user)],
                     capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(legacy.read_text(), 'Preserve unrelated user-root instructions.\n')
@@ -435,6 +440,30 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(updated.count('<!-- codex-model-routing:start -->'), 1)
             self.assertIn('Apply `$codex-model-routing`', updated)
             self.assertFalse((user / '.codex' / 'config.toml').exists())
+            skill = user / '.codex' / 'skills' / 'codex-model-routing'
+            self.assertFalse((skill / '.env').exists())
+            self.assertFalse((skill / 'scripts' / 'synthetic.dpapi').exists())
+            for name in ('Invoke-Routing.ps1', 'routing_runtime.py', 'routing_decision.py',
+                         'Set-RoutingApiKey.ps1', 'invoke-routing.sh'):
+                self.assertTrue((skill / 'scripts' / name).is_file(), name)
+            self.assertFalse((user / '.codex' / 'agents' / 'muse-worker.toml').exists())
+            self.assertFalse((user / '.codex' / 'agents' / 'ganglion-worker.toml').exists())
+            self.assertFalse((user / '.codex' / 'routing').exists())
+            launched = subprocess.run(['powershell.exe', '-NoProfile', '-File',
+                str(skill / 'scripts' / 'Invoke-Routing.ps1'), '-PacketPath',
+                str(skill / 'assets' / 'routing-packet.example.json'), '-PythonPath', sys.executable,
+                '-Offline'], capture_output=True, text=True, timeout=20,
+                env={**__import__('os').environ, 'CODEX_HOME': str(user / '.codex')})
+            self.assertEqual(launched.returncode, 0, launched.stderr)
+            self.assertEqual(json.loads(launched.stdout)['recommendation']['model'], 'gpt-6.1-sol')
+            # An opt-in legacy install must preserve existing user-owned profiles.
+            existing = user / '.codex' / 'agents' / 'muse-worker.toml'
+            existing.write_text('user-owned local profile\n')
+            opted_in = subprocess.run(['powershell.exe', '-NoProfile', '-File',
+                str(ROOT / 'scripts' / 'install.ps1'), '-UserRoot', str(user),
+                '-IncludeLegacyLocalProfiles'], capture_output=True, text=True, timeout=30)
+            self.assertEqual(opted_in.returncode, 0, opted_in.stderr)
+            self.assertEqual(existing.read_text(), 'user-owned local profile\n')
 
     def test_native_profiles_match_current_codex_combinations(self):
         import tomllib

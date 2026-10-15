@@ -2,6 +2,16 @@
 
 ## Unreleased — 2026-10-15
 
+- Add a portable configured runtime, PowerShell/Unix launchers, external config
+  sample and optional human-only Windows credential entry helper. Both extra
+  providers default off; native routing needs neither credentials nor a local LLM.
+- Add generic local model/effort admission and explicit bounded Chat Completions
+  execution. Optional-provider failures preserve an admissible recommendation;
+  require-local, overrides and hard budgets never authorize a paid fallback.
+- Move named local profile templates to opt-in compatibility examples. Clean
+  installs register native profiles only and preserve existing named profiles.
+  Peter's running/private local installation is unchanged by this release work.
+
 - Fix both installers to merge global routing guidance into
   `~/.codex/AGENTS.md`, the documented Codex global instruction location.
   Leave the legacy user-root `~/AGENTS.md` and unrelated instructions intact;
