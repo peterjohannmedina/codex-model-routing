@@ -11,6 +11,8 @@
   and declared budget ceilings outside model discretion.
 - Bound decision latency and request/response sizes, disable automatic retries,
   validate choice/refusal/distribution output, and emit sanitized provenance.
+- Resolve a single admissible candidate locally without a metered request, and
+  enforce the Decisions API's 2–255 choice count at the provider boundary.
 - Document configuration, API costs, trust boundaries, model-effort compatibility,
   execution-budget responsibilities, and the live validation still required.
   Add offline behavioral tests. Local adapters and their dispatch policy are

@@ -1,4 +1,5 @@
 import copy
+from dataclasses import replace
 import io
 import json
 from pathlib import Path
@@ -106,6 +107,59 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(request.quality, "high_intelligence")
         self.assertEqual(request.fallback.effort, "low")
 
+    def test_exact_override_single_candidate_never_calls_transport(self):
+        request = routing.Request.parse(packet(), routing.Overrides.parse({
+            "model": "gpt-6-astra", "effort": "low"}))
+        for consent in (False, True):
+            provider = routing.DecisionsProvider(api_key="", allow_api=consent,
+                transport=lambda *_: self.fail("single candidate must resolve locally"))
+            result = routing.recommend(request, provider)
+            self.assertEqual(result["recommendation"]["id"], "astra_low")
+            self.assertEqual(result["provenance"]["used_provider"], "rules")
+            self.assertEqual(result["provenance"]["resolution"], "single_admissible_route")
+            self.assertIsNone(result["provenance"]["fallback_reason"])
+            self.assertNotIn("evaluator_model", result["provenance"])
+
+    def test_ceiling_filtered_single_candidate_never_calls_transport(self):
+        for ceiling, bound in (("tokens", 999), ("cost_usd", 0.05), ("latency_ms", 2500)):
+            value = packet()
+            # Exactly one route is left for each ceiling.
+            if ceiling == "tokens":
+                value["candidates"][1]["token_budget"] = 999
+            value["ceilings"] = {ceiling: bound}
+            request = routing.Request.parse(value)
+            self.assertEqual(len(request.candidates), 1)
+            result = routing.recommend(request, routing.DecisionsProvider(
+                api_key="test", allow_api=True,
+                transport=lambda *_: self.fail("single candidate must resolve locally")))
+            self.assertEqual(result["recommendation"]["id"], "luna_high")
+            self.assertEqual(result["provenance"]["resolution"], "single_admissible_route")
+
+    def test_decisions_choice_count_limits_at_provider_boundary(self):
+        # Packet admission is stricter (32). Validate the wire contract too for
+        # callers embedding the provider with a directly constructed Request.
+        candidates = tuple(replace(self.request.candidates[0], id=f"r{i}") for i in range(256))
+        provider = routing.DecisionsProvider(api_key="test", allow_api=True,
+            transport=lambda *_: self.fail("invalid choice count must not reach transport"))
+        for choices in ((), candidates):
+            with self.subTest(count=len(choices)), self.assertRaisesRegex(
+                    routing.ProviderFailure, "invalid_choice_count"):
+                provider.choose(replace(self.request, candidates=choices))
+        calls = []
+        def transport(body, *_):
+            calls.append(json.loads(body))
+            return answer(request, "r0")
+        request = replace(self.request, candidates=candidates[:2], fallback=candidates[0])
+        provider = routing.DecisionsProvider(api_key="test", allow_api=True, transport=transport)
+        result = routing.recommend(request, provider)
+        self.assertEqual(result["recommendation"]["id"], "r0")
+        self.assertEqual(result["provenance"]["used_provider"], "decisions")
+        self.assertEqual(len(calls[-1]["questions"][0]["choices"]), 2)
+        # 255 passes the count gate; consent is then required. The package's
+        # independent 32 KiB request cap can impose a lower effective limit.
+        with self.assertRaisesRegex(routing.ProviderFailure, "api_not_authorized"):
+            routing.DecisionsProvider().choose(replace(self.request, candidates=candidates[:255]))
+
     def test_quality_does_not_force_literal_high(self):
         request = routing.Request.parse(packet(), routing.Overrides.parse({"quality": "high_intelligence"}))
         self.assertEqual(len(request.candidates), 3)
@@ -175,7 +229,7 @@ class RoutingTests(unittest.TestCase):
         request = routing.Request.parse(value, routing.Overrides.parse({"model": "gpt-6-luna"}))
         result = routing.recommend(request, self.provider(answer(self.request, "astra_low")))
         self.assertEqual(result["recommendation"]["model"], "gpt-6-luna")
-        self.assertEqual(result["provenance"]["fallback_reason"], "invalid_response")
+        self.assertEqual(result["provenance"]["resolution"], "single_admissible_route")
         value["overrides"] = {"model": "gpt-6-astra"}
         with self.assertRaises(routing.RoutingError):
             routing.Request.parse(value)

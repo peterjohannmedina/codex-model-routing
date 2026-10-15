@@ -22,7 +22,9 @@ import urllib.request
 
 ENDPOINT = "https://api.openai.com/v1/decisions"
 DECISION_MODEL = "gpt-6-luna"
-POLICY_VERSION = "2026-10-15.1"
+POLICY_VERSION = "2026-10-15.2"
+MIN_DECISIONS_CHOICES = 2
+MAX_DECISIONS_CHOICES = 255
 MAX_PACKET_BYTES = 32768
 MAX_RESPONSE_BYTES = 65536
 EFFORTS = {"low", "medium", "high", "xhigh", "max", "ultra"}
@@ -299,6 +301,12 @@ class DecisionsProvider:
             raise RoutingError("invalid_confidence_threshold")
 
     def choose(self, request: Request) -> tuple[str, dict]:
+        if len(request.candidates) == 1:
+            # Admission has already resolved the choice. This also works without
+            # API consent/key: no evaluation, network request or spending occurs.
+            return request.candidates[0].id, {"resolution": "single_admissible_route"}
+        if not MIN_DECISIONS_CHOICES <= len(request.candidates) <= MAX_DECISIONS_CHOICES:
+            raise ProviderFailure("invalid_choice_count")
         if not self.allow_api:
             raise ProviderFailure("api_not_authorized")
         if not self.api_key.strip():
@@ -382,6 +390,8 @@ def recommend(request: Request, provider: DecisionProvider) -> dict:
         selected = next((c for c in request.candidates if c.id == candidate_id), None)
         if selected is None:
             raise ProviderFailure("inadmissible_choice")
+        if metadata.get("resolution") == "single_admissible_route":
+            used = "rules"
     except ProviderFailure as error:
         selected = request.fallback
         used = "rules"

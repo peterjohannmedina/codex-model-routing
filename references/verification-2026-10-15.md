@@ -21,7 +21,7 @@ Base commit: `a41de9d` on `main`. Work isolated in a fresh clone and branch
 
 | Check | Result |
 | --- | --- |
-| `python -m unittest discover -s tests -v` | 27 offline tests pass on bundled Python 3.12 / Windows. No external model requests. |
+| `python -m unittest discover -s tests -v` | 30 offline tests pass on bundled Python 3.12 / Windows. No external model requests. |
 | CLI example, default provider | Returns `stay_sol_low` from offline rules. |
 | CLI example, Decisions without `--allow-api` | Returns same route with `api_not_authorized`; no request. |
 | PowerShell 7 installer, twice, isolated sibling fixture | New source files match installed copies; Sol general profile installed; one marked block; unrelated UTF-8 instructions preserved; no `config.toml` created. |
@@ -32,8 +32,9 @@ Base commit: `a41de9d` on `main`. Work isolated in a fresh clone and branch
 
 An offline GitHub Actions matrix was added for Python 3.11/3.12 on Windows and
 Ubuntu. The initial 26-test commit `0603a3d` passed all four matrix jobs on push;
-the final numeric-overflow regression adds one more offline test. Read PR checks
-for the latest exact-commit matrix status.
+the numeric-overflow regression and single-candidate/count-limit review fixes add
+four more offline tests. The 27-test commit `422aea3` also passed all matrix jobs.
+Read PR checks for the latest exact-commit matrix status.
 
 The first test invocation encountered sandbox restrictions in the process's
 default temporary directory; the fixture was moved under the isolated task

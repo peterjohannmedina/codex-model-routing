@@ -14,7 +14,9 @@ task, owns the safe fallback, validates results, and dispatches work.
    conservation violations, overrides, and budget conflicts.
 3. `DecisionProvider.choose(Request)` returns a candidate ID and provenance.
    `RulesProvider` retains the parent's safe choice. `DecisionsProvider` asks
-   OpenAI to choose one joint model/effort/action tuple.
+   OpenAI to choose one joint model/effort/action tuple. If admission leaves
+   exactly one candidate, it resolves that route locally without API consent,
+   credentials, or a transport call.
 4. `recommend` validates the selected ID again and returns JSON. Refusal,
    uncertainty, invalid output, network failure, or timeout uses the safe route.
 5. The parent rechecks current eligibility and capacity, applies supported
@@ -125,6 +127,9 @@ type, `model: gpt-6-luna`, string `input`, and a single `choice` question named
 `route`. Every choice value is an admitted candidate ID; its description contains
 the complete model/effort/action tuple and any bounds. Only GPT-6 Luna is currently
 supported as the **evaluator**, independently of the recommended execution model.
+The [API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)
+requires 2–255 unique choices; the provider enforces that count before transport.
+The package's stricter 32-candidate admission and 32 KiB request bounds still apply.
 No Responses-only `text.format`, tool calls, streaming, reasoning parameter, or
 invented arbitrary output schema is sent to Decisions.
 
@@ -140,7 +145,9 @@ as routing or permission instructions.
 
 Output contains `schema_version`, a complete `recommendation`, and `provenance`:
 requested/used provider, policy version, elapsed milliseconds, and a sanitized
-fallback code. Successful Decisions output adds evaluator model, confidence,
+fallback code. A single admitted choice reports `used_provider: rules`,
+`resolution: single_admissible_route`, and no fallback error or API evaluation
+metadata. Successful Decisions output adds evaluator model, confidence,
 request byte count, and SHA-256 digest. Provenance never includes API keys, the
 task summary, response bodies, free-form model explanations or exception messages.
 The recommendation echoes trusted candidate fields, including its description;
