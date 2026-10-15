@@ -53,10 +53,14 @@ for relative_path in \
     assets/agents/luna-efficient.toml \
     assets/agents/terra-general.toml \
     assets/agents/sol-expert.toml \
+    assets/agents/sol-general.toml \
     assets/agents/astra-integrator.toml \
     assets/agents/muse-worker.toml \
     assets/agents/ganglion-worker.toml \
     references/model-surfaces.md \
+    references/decision-providers.md \
+    assets/routing-packet.example.json \
+    scripts/routing_decision.py \
     references/local-workers.md \
     references/switching-economics.md \
     scripts/test-muse-access.ps1 \

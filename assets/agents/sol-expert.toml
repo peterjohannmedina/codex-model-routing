@@ -1,6 +1,6 @@
 name = "sol-expert"
 description = "Use for ambiguous, difficult, or consequential subtasks involving architecture, security, unclear debugging, complex multi-file changes, or final verification."
-model = "gpt-5.6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 nickname_candidates = ["Sol Architect", "Sol Reviewer", "Sol Debugger"]
 developer_instructions = """
