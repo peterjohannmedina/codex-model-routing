@@ -24,6 +24,9 @@ The dashboard is a separate review iteration, not an installed update.
   replay, late thread-identity enrichment/conflict rejection, authorized anchor
   refresh, failed-bootstrap recovery with existing capability, and delayed saves
   preserving newer edits and their next-save version. Both Node suites run in CI.
+- A follow-up delayed-GET regression reproduced stale form/version restoration
+  after successful POST. Successful save now invalidates polls that began during
+  the pending write as well as polls that began before it.
 - Both shell scripts pass Git Bash syntax checks. `git diff --check` passes.
 - CI requires real HTTP tests (socket denial becomes a failure, not a skip).
   Read the dashboard PR's exact-head Windows/Ubuntu × Python 3.11/3.12 results.

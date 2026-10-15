@@ -123,6 +123,7 @@ byId('config-form').addEventListener('submit',async event=>{
   saving=true;formEpoch++;byId('save').disabled=true;byId('reload').disabled=true;
   try{
     const saved=await api('/api/config',{config:snapshot,version});
+    formEpoch++; // Polls begun during the pending save also contain pre-save state.
     if(saved.config_version)formVersion=saved.config_version;
     dirty=editRevision!==submittedRevision;
     await refresh();

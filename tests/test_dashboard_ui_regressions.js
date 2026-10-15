@@ -13,7 +13,7 @@ function boot(hash,delaySave=false){
   const nodes={},calls=[],historyChanges=[];
   for(const match of html.matchAll(/<([a-z]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g))nodes[match[3]]=new Element(/\btype="([^"]+)"/.exec(match[2])?.[1]||'');
   let snapshot={config:JSON.parse(fs.readFileSync(path.join(root,'assets/routing-config.example.json'),'utf8')),config_version:'base',events:[],sessions:[],daily:[],observed_at:'2026-10-15T22:00:00Z',totals:{requests:0,completed_executions:0,evaluator:{input_tokens:{known:0,unknown_requests:0}},downstream:{input_tokens:{known:0,unknown_requests:0}},evaluator_base_cost_estimate_usd:null,local_cost_estimate_usd:null}};
-  let interval, release, saves=0;
+  let interval, release, saves=0, nextStateGate=null;
   const gate=new Promise(resolve=>{release=resolve;});
   const storage=new Map([['routing-csrf','fixture-capability']]);
   const fetch=async(url,options)=>{
@@ -21,7 +21,11 @@ function boot(hash,delaySave=false){
     if(url==='/api/auth')throw new Error('navigation_anchor_sent_as_bootstrap');
     assert.equal(options.headers['X-Routing-CSRF'],'fixture-capability');
     if(url==='/api/session')return{ok:true,json:async()=>({csrf:'fixture-capability'})};
-    if(url==='/api/state')return{ok:true,json:async()=>structuredClone(snapshot)};
+    if(url==='/api/state'){
+      const captured=structuredClone(snapshot), delayed=nextStateGate;nextStateGate=null;
+      if(delayed)await delayed;
+      return{ok:true,json:async()=>captured};
+    }
     assert.equal(url,'/api/config');const body=JSON.parse(options.body);
     if(delaySave&&saves===0)await gate;
     saves++;snapshot.config=body.config;snapshot.config_version='saved-'+saves;
@@ -29,7 +33,8 @@ function boot(hash,delaySave=false){
   };
   const context=vm.createContext({document:{hidden:false,getElementById:id=>nodes[id],createElement:()=>new Element(),createElementNS:()=>new Element()},location:{hash,pathname:'/'},history:{replaceState:(_a,_b,value)=>historyChanges.push(value)},sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},fetch,AbortController,setTimeout,clearTimeout,setInterval:fn=>{interval=fn;},confirm:()=>false});
   vm.runInContext(script,context);
-  return{nodes,calls,historyChanges,release,poll:()=>interval(),snapshot:()=>snapshot};
+  return{nodes,calls,historyChanges,release,poll:()=>interval(),snapshot:()=>snapshot,
+    holdNextPoll:()=>{let resume;nextStateGate=new Promise(resolve=>{resume=resolve;});return resume;}};
 }
 async function anchors(){
   for(const hash of ['#providers','#activity','#overview']){
@@ -59,4 +64,18 @@ async function delayedSave(){
   assert.equal(JSON.parse(posts[1].options.body).version,'saved-1','next edit used a stale saved version');
   assert.equal(ui.snapshot().config.local.model,'newer-unsaved-edit');
 }
-(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();console.log('Dashboard navigation and delayed-save regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
+async function stalePoll(){
+  const ui=boot('',true);await flush();await flush();
+  ui.nodes['local-model'].value='saved-before-old-get';ui.nodes['config-form'].listeners.input();
+  const pending=ui.nodes['config-form'].listeners.submit({preventDefault(){}});await flush();
+  const resumePoll=ui.holdNextPoll();ui.poll();await flush();
+  ui.release();await pending;
+  assert.equal(ui.nodes['local-model'].value,'saved-before-old-get');
+  resumePoll();await flush();await flush();
+  assert.equal(ui.nodes['local-model'].value,'saved-before-old-get','old GET restored the pre-save form after POST completion');
+  ui.nodes['local-model'].value='next-edit';ui.nodes['config-form'].listeners.input();
+  await ui.nodes['config-form'].listeners.submit({preventDefault(){}});
+  const posts=ui.calls.filter(c=>c.url==='/api/config');
+  assert.equal(JSON.parse(posts[1].options.body).version,'saved-1','old GET restored the pre-save version');
+}
+(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();console.log('Dashboard navigation, delayed-save and stale-poll regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
