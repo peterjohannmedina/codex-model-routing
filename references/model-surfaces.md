@@ -51,29 +51,17 @@ Do not claim a measured billing or cache penalty for changing models unless the 
 
 ## Custom agents
 
-Codex loads personal custom-agent TOML files from `~/.codex/agents/` and project agents from `.codex/agents/`. Required fields are `name`, `description`, and `developer_instructions`. Optional `model` and `model_reasoning_effort` fields pin the route.
+Native custom-agent templates are in `assets/agents/` and are registered by the
+installers. Existing named local profiles are preserved. Optional historical
+profiles live in `assets/legacy-agents/` and are installed only with the explicit
+legacy-profile option; their example localhost endpoint must be configured.
+The generic local process adapter does not require a custom-agent profile or a
+particular local model name. See [local-workers.md](local-workers.md).
 
-The canonical templates for this skill are under `assets/agents/`. Installation must copy them separately to `~/.codex/agents/`; keeping them only inside the skill directory does not register them as custom agents. `muse-worker.toml` is a provider-backed local worker: it pins `model = "muse"` and `model_provider = "litellm"` inside the child-agent profile, leaving the parent model and global provider unchanged.
-
-`ganglion-worker.toml` is a provider-backed local worker. It pins
-`model = "ganglion-auto"` to a Responses-capable LiteLLM provider whose
-upstream route is Ganglion, and reads the client key from `GANGLION_API_KEY`.
-The installed Ganglion broker itself currently exposes Chat Completions, so the
-direct loopback path uses `scripts/invoke-ganglion-worker.ps1` instead of a
-Codex provider profile. Both paths require a live probe before use.
-
-Use `scripts/sweep-ganglion-resources.ps1` as the route selector. It reads the
-resident runtime and queue signals before checking the continuity endpoint or
-the external LiteLLM gateway, so a ready local runtime short-circuits the
-cascade and an occupied runtime causes the search to move outward.
-
-The routing policy is persisted under the Codex state directory. Its default
-is to target Ganglion-managed local inference for at least 50% of eligible
-bounded sub-agent tasks and to wait synchronously for worker results. Use the
-`/prompts:codex-routing` custom prompt to change the target.
-
-See [local-workers.md](local-workers.md) for endpoint configuration, protocol
-requirements, and the bundled local adapters.
+Custom-agent provider execution requires a compatible Responses endpoint;
+Chat Completions-only servers use the generic bounded process route. Selecting
+a recommendation is separate from invoking a custom agent or changing the main
+session's model. No launcher changes Codex permissions or executes native work.
 
 ## Package installation
 
@@ -87,7 +75,7 @@ For a personal installation:
 
 1. Copy the package to `~/.codex/skills/codex-model-routing/`.
 2. Copy `assets/agents/*.toml` to `~/.codex/agents/`.
-3. Merge `assets/AGENTS.md.snippet` into the user's home `AGENTS.md` when routing should apply to every nontrivial task under that home directory.
+3. Merge `assets/AGENTS.md.snippet` into the user's Codex home `~/.codex/AGENTS.md` when routing should apply across projects. A user-root `~/AGENTS.md` is not the Codex global instruction file. Preserve unrelated instructions and keep local customizations outside the package's marked block.
 4. Do not enable `assets/profiles/routing-bypass.config.toml` unless the user explicitly requests that permission profile.
 5. Start a new chat or restart Codex if the updated skill or custom agents are not detected automatically.
 

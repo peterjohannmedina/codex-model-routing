@@ -22,7 +22,7 @@ import urllib.request
 
 ENDPOINT = "https://api.openai.com/v1/decisions"
 DECISION_MODEL = "gpt-6-luna"
-POLICY_VERSION = "2026-10-15.2"
+POLICY_VERSION = "2026-10-15.3"
 MIN_DECISIONS_CHOICES = 2
 MAX_DECISIONS_CHOICES = 255
 MAX_PACKET_BYTES = 32768
@@ -92,9 +92,11 @@ class Candidate:
             raise RoutingError("invalid_candidate_id")
         if candidate.action not in ("stay", "switch", "delegate"):
             raise RoutingError("invalid_action")
-        if candidate.adapter not in ("native", "ganglion", "muse"):
+        if candidate.adapter not in ("native", "local", "ganglion", "muse"):
             raise RoutingError("invalid_adapter")
-        if not isinstance(candidate.model, str) or candidate.effort not in EFFORTS:
+        if (not isinstance(candidate.model, str) or not candidate.model.strip()
+                or len(candidate.model) > 256 or not isinstance(candidate.effort, str)
+                or candidate.effort not in EFFORTS | ({"default"} if candidate.adapter == "local" else set())):
             raise RoutingError("invalid_model_or_effort")
         if not isinstance(candidate.description, str) or len(candidate.description) > 512:
             raise RoutingError("invalid_description")
@@ -120,9 +122,10 @@ class Overrides:
     def parse(cls, raw: object) -> Overrides:
         value = object_fields(raw, {"model", "effort", "quality"}, set())
         result = cls(**value)
-        if result.model is not None and result.model not in NATIVE_MODELS:
+        if result.model is not None and (not isinstance(result.model, str) or not 1 <= len(result.model) <= 256
+                                         or any(ord(c) < 33 or ord(c) > 126 for c in result.model)):
             raise RoutingError("unsupported_override_model")
-        if result.effort is not None and result.effort not in EFFORTS:
+        if result.effort is not None and result.effort not in EFFORTS | {"default"}:
             raise RoutingError("unsupported_override_effort")
         if result.quality not in ("balanced", "high_intelligence"):
             raise RoutingError("unsupported_quality")
@@ -141,7 +144,7 @@ class Request:
     def parse(cls, raw: object, overrides: Overrides = Overrides()) -> Request:
         fields = {"schema_version", "summary", "available_models", "candidates",
                   "fallback_id", "conservation_mode", "stronger_exception",
-                  "local_work_eligible", "ready_adapters", "ceilings"}
+                  "local_work_eligible", "ready_adapters", "ceilings", "require_local"}
         value = object_fields(raw, fields, {"schema_version", "summary", "available_models",
                                            "candidates", "fallback_id", "conservation_mode"})
         if type(value["schema_version"]) is not int or value["schema_version"] != 1:
@@ -149,7 +152,7 @@ class Request:
         if (not isinstance(value["summary"], str) or not value["summary"].strip()
                 or len(value["summary"].encode("utf-8")) > 8192):
             raise RoutingError("invalid_summary")
-        for key in ("conservation_mode", "stronger_exception", "local_work_eligible"):
+        for key in ("conservation_mode", "stronger_exception", "local_work_eligible", "require_local"):
             if type(value.get(key, False)) is not bool:
                 raise RoutingError("invalid_policy_flag")
         catalog = value["available_models"]
@@ -161,7 +164,7 @@ class Request:
                     or (model in LUNA_MODELS and "ultra" in efforts)):
                 raise RoutingError("invalid_catalog")
         ready = value.get("ready_adapters", [])
-        if not isinstance(ready, list) or any(a not in ("ganglion", "muse") for a in ready):
+        if not isinstance(ready, list) or any(a not in ("local", "ganglion", "muse") for a in ready):
             raise RoutingError("invalid_ready_adapters")
         ceilings = object_fields(value.get("ceilings", {}),
                                  {"tokens", "cost_usd", "latency_ms"}, set())
@@ -179,6 +182,8 @@ class Request:
 
         def admitted(c):
             if c.adapter == "native":
+                if value.get("require_local", False):
+                    return False
                 if c.model not in catalog or c.effort not in catalog[c.model]:
                     return False
                 if (value["conservation_mode"] and not value.get("stronger_exception", False)
@@ -186,7 +191,7 @@ class Request:
                     return False
             else:
                 expected = {"ganglion": {"ganglion", "ganglion-auto"}, "muse": {"muse"}}
-                if (c.action != "delegate" or c.model not in expected[c.adapter]
+                if (c.action != "delegate" or (c.adapter != "local" and c.model not in expected[c.adapter])
                         or c.adapter not in ready or not value.get("local_work_eligible", False)):
                     return False
             if overrides.model is not None and c.model != overrides.model:

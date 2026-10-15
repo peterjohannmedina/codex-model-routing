@@ -12,3 +12,7 @@ __pycache__/
 *.pyc
 
 .test-tmp/
+
+# User configuration/credentials belong outside this repository.
+.env*
+*.dpapi

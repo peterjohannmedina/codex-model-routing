@@ -1,5 +1,16 @@
 # Routing decision providers
 
+## Portable entrypoint
+
+Prefer `scripts/Invoke-Routing.ps1` (Windows), `scripts/invoke-routing.sh` (Unix),
+or `python3 scripts/routing_runtime.py PACKET`. These ship in the package and
+share external configuration, optional provider admission and evaluator cap
+checks. Read [local-workers.md](local-workers.md) for the four-provider matrix,
+generic local execution, require-local behavior and secure loader options.
+The lower-level `routing_decision.py` interface below remains compatible for
+embedders with prevalidated readiness; it does not discover local services or
+load encrypted credentials itself.
+
 ## Architecture and scope
 
 The package was a skill plus custom-agent profiles and PowerShell worker
@@ -68,12 +79,13 @@ point, not proof of availability on another account. Prepare these fields:
 | --- | --- |
 | `summary` | Required nonempty UTF-8 task evidence, at most 8 KiB. Include workload, acceptance criteria, quality/cost/latency tradeoffs and context-transfer considerations. Exclude credentials and unrelated/private transcript text. Evidence never authorizes overrides. |
 | `available_models` | Required mapping from exact visible native model IDs to supported Codex effort strings. Extract from the active `model/list` response or a recently observed client catalog; do not use API effort support as Codex support. Omit hidden/internal models. The example is a dated snapshot. |
-| `candidates` | 1–32 complete choices with unique ASCII `id` (1–64 letters/digits/underscore/hyphen), `action` (`stay`, `switch`, `delegate`), exact `model`, `effort`, optional `adapter` (`native`, `ganglion`, `muse`), and optional description (512 characters). |
+| `candidates` | 1–32 complete choices with unique ASCII `id` (1–64 letters/digits/underscore/hyphen), `action` (`stay`, `switch`, `delegate`), exact `model`, `effort`, optional `adapter` (`native`, generic `local`, or legacy `ganglion`/`muse`), and optional description (512 characters). Generic local servers may use `effort: default` when no reasoning control is exposed. |
 | `fallback_id` | Parent's precomputed safe choice. Order the remaining candidates in safe fallback order. If overrides or ceilings exclude the original choice, use the first admissible candidate; never silently drop the override. |
 | `conservation_mode` | Required boolean from the persisted usage guard. Without an exception, native choices must be an available Luna at `max`. |
 | `stronger_exception` | Optional boolean, default false; parent may set true only for the skill's existing planning/demonstrated-capability-gap exception. A quality preference alone does not establish that exception. |
 | `local_work_eligible` | Optional boolean, default false; parent establishes data-handling/task suitability before offering local work. |
-| `ready_adapters` | Optional list of `ganglion`/`muse`, default empty; parent supplies only after matching runtime/capacity/probe evidence. Revalidate before dispatch; a claimed flag does not establish live readiness. |
+| `ready_adapters` | Optional list of `local` or legacy `ganglion`/`muse`, default empty, for lower-level embedders. The portable runtime determines generic local advertisement itself and does not trust a packet to enable an unconfigured provider. Revalidate capacity before dispatch. |
+| `require_local` | Optional boolean, default false. Native routes cannot satisfy an explicit local-only request; absence or failure of a required local route stops rather than silently choosing paid native work. |
 | `ceilings` | Optional object containing `tokens`, `cost_usd`, `latency_ms`. Zero is valid and usually admits no work. |
 
 Each candidate may declare `token_budget` (positive integer),

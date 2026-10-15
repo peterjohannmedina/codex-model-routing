@@ -2,6 +2,38 @@
 
 A Codex skill for choosing models, reasoning effort, and subagents to fit the task. It weighs capability, available usage, context transfer, and coordination costs, with a built-in option to delegate bounded subtasks to local LLMs.
 
+Native Codex routing works with **no extra providers**. OpenAI Decisions and
+generic local execution are independently optional and disabled by default.
+
+| Local provider | Decisions | Behavior |
+| --- | --- | --- |
+| Off | Off | Parent's native model/effort recommendation; no provider request |
+| On | Off | Configured, eligible local choices may join the native choices; rules select |
+| Off | On | Decisions may select a native model/effort pair after explicit API consent |
+| On | On | Decisions may choose from admitted native and configured local pairs |
+
+Missing keys, unconfigured/offline providers, refusals and errors retain an
+admissible recommendation. Explicit require-local requests, unsupported overrides
+and hard ceilings fail closed when no route satisfies them. Recommendations do
+not execute native work or authorize a paid fallback.
+
+The complete portable entrypoint is included:
+
+```powershell
+# Windows: selects an existing Python 3.11+ runtime, skipping Store aliases.
+powershell.exe -NoProfile -File .\scripts\Invoke-Routing.ps1 -PacketPath .\assets\routing-packet.example.json -Offline
+```
+
+```sh
+# Unix, or use python3 scripts/routing_runtime.py with the same arguments.
+sh scripts/invoke-routing.sh assets/routing-packet.example.json --offline
+```
+
+Set `CODEX_ROUTING_PYTHON` for an explicit existing interpreter. No SDK, tokenizer,
+local server or key is required for the baseline. See
+[portable providers and local execution](references/local-workers.md) for config,
+secure credential options, readiness checks and bounded execution.
+
 ## Install
 
 Clone this repository into a temporary or development directory, then use the installer for your platform.
@@ -21,12 +53,12 @@ The shell installer requires `rsync`.
 ```powershell
 git clone https://github.com/peterjohannmedina/codex-model-routing.git
 Set-Location .\codex-model-routing
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
+powershell.exe -NoProfile -File .\scripts\install.ps1
 ```
 
 PowerShell 7 (`pwsh`) can run the same installer.
 
-Both installers copy the complete skill to `~/.codex/skills/codex-model-routing`, register the bundled custom-agent profiles, install the routing prompt, and merge the routing instructions into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
+Both installers copy the complete skill, including launchers and configuration examples, to `~/.codex/skills/codex-model-routing`, register the native profiles, install the routing prompt, and merge instructions into `~/.codex/AGENTS.md`. Existing named local profiles are preserved. Legacy local profiles are installed only with `-IncludeLegacyLocalProfiles` / `--include-legacy-local-profiles`, without overwriting existing profiles. On Windows, `~` means the current user's profile directory. Installation does not create a user configuration or credential file.
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 
@@ -72,13 +104,13 @@ The router has built-in support for delegating subagent work to local LLMs. This
 
 Connect a compatible local inference service or gateway using the bundled worker profiles and scripts. The router checks availability before assigning work and can prefer local capacity when it is suitable. If no configured local route is usable, work stays on an available native Codex route.
 
-The included Ganglion integration provides capacity-aware route selection and a configurable target for the share of eligible tasks handled locally. Its default target is 50%, with result waiting and outcome tracking enabled. The target is best effort and applies only to suitable bounded work. For example:
+The routing prompt reports configuration by default:
 
 ```text
-/prompts:codex-routing 75
+/prompts:codex-routing status
 ```
 
-See [Local LLM setup](references/local-workers.md) for provider configuration, supported protocols, connectivity checks, and the included Ganglion and Muse adapters. Local inference is optional; installation does not provision an LLM server.
+The public default local route uses a configured endpoint/model, with no Muse or Ganglion dependency. Existing deployments can still explicitly use the legacy capacity sweep, share-target helper and named profiles. See [Local LLM setup](references/local-workers.md) and the separate [legacy adapters](references/legacy-local-workers.md). Installation does not provision or contact an LLM server.
 
 ## Scope
 

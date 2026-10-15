@@ -2,7 +2,8 @@
 param(
     [string]$SourceRoot,
     [string]$UserRoot = [Environment]::GetFolderPath('UserProfile'),
-    [switch]$SkipGlobalInstruction
+    [switch]$SkipGlobalInstruction,
+    [switch]$IncludeLegacyLocalProfiles
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,21 +23,25 @@ $requiredFiles = @(
     (Join-Path (Join-Path 'assets' 'agents') 'sol-expert.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'sol-general.toml'),
     (Join-Path (Join-Path 'assets' 'agents') 'astra-integrator.toml'),
-    (Join-Path (Join-Path 'assets' 'agents') 'muse-worker.toml'),
-    (Join-Path (Join-Path 'assets' 'agents') 'ganglion-worker.toml'),
     (Join-Path 'references' 'model-surfaces.md'),
     (Join-Path 'references' 'decision-providers.md'),
     (Join-Path 'assets' 'routing-packet.example.json'),
     (Join-Path 'scripts' 'routing_decision.py'),
+    (Join-Path 'scripts' 'routing_runtime.py'),
+    (Join-Path 'scripts' 'Invoke-Routing.ps1'),
+    (Join-Path 'scripts' 'Set-RoutingApiKey.ps1'),
+    (Join-Path 'scripts' 'invoke-routing.sh'),
+    (Join-Path 'assets' 'routing-config.example.json'),
     (Join-Path 'references' 'local-workers.md'),
     (Join-Path 'references' 'switching-economics.md'),
-    (Join-Path 'scripts' 'test-muse-access.ps1'),
-    (Join-Path 'scripts' 'test-ganglion-access.ps1'),
-    (Join-Path 'scripts' 'invoke-ganglion-worker.ps1'),
-    (Join-Path 'scripts' 'sweep-ganglion-resources.ps1'),
-    (Join-Path 'scripts' 'manage-codex-routing-policy.ps1'),
     (Join-Path (Join-Path 'assets' 'prompts') 'codex-routing.md')
 )
+if ($IncludeLegacyLocalProfiles) {
+    $requiredFiles += @('assets/legacy-agents/muse-worker.toml', 'assets/legacy-agents/ganglion-worker.toml',
+        'scripts/test-muse-access.ps1', 'scripts/test-ganglion-access.ps1',
+        'scripts/invoke-ganglion-worker.ps1', 'scripts/sweep-ganglion-resources.ps1',
+        'scripts/manage-codex-routing-policy.ps1')
+}
 
 foreach ($relativePath in $requiredFiles) {
     $candidate = Join-Path $resolvedSource $relativePath
@@ -65,20 +70,43 @@ if (
     throw "Refusing to install the skill inside its own source directory: $resolvedSkillDestination"
 }
 
+function Copy-RoutingPackage {
+    param([string]$From, [string]$To)
+    foreach ($entry in Get-ChildItem -LiteralPath $From -Force) {
+        if ($entry.Name -eq '.git' -or $entry.Name -eq '__pycache__' -or
+            $entry.Name -like '*.pyc' -or $entry.Name -like '*.dpapi' -or $entry.Name -like '.env*') { continue }
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Package links are not supported by this installer.' }
+        if ($entry.PSIsContainer) {
+            $childDestination = Join-Path $To $entry.Name
+            New-Item -ItemType Directory -Force -Path $childDestination | Out-Null
+            Copy-RoutingPackage -From $entry.FullName -To $childDestination
+        } else {
+            Copy-Item -LiteralPath $entry.FullName -Destination $To -Force
+        }
+    }
+}
+
 if ($PSCmdlet.ShouldProcess($skillDestination, 'Install Codex model-routing skill package')) {
     New-Item -ItemType Directory -Force -Path $skillParent | Out-Null
     if (-not [StringComparer]::OrdinalIgnoreCase.Equals($resolvedSource, $resolvedSkillDestination)) {
         New-Item -ItemType Directory -Force -Path $skillDestination | Out-Null
-        Get-ChildItem -LiteralPath $resolvedSource -Force |
-            Where-Object { $_.Name -ne '.git' } |
-            Copy-Item -Destination $skillDestination -Recurse -Force
+        Copy-RoutingPackage -From $resolvedSource -To $skillDestination
     }
 }
 
-if ($PSCmdlet.ShouldProcess($agentDestination, 'Install native and local-worker custom-agent profiles')) {
+if ($PSCmdlet.ShouldProcess($agentDestination, 'Install native profiles and requested legacy profiles')) {
     New-Item -ItemType Directory -Force -Path $agentDestination | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'agents') -Filter '*.toml' -File |
-        Copy-Item -Destination $agentDestination -Force
+    foreach ($profileName in @('luna-efficient', 'sol-general', 'terra-general', 'sol-expert', 'astra-integrator')) {
+        Copy-Item -LiteralPath (Join-Path $resolvedSource "assets/agents/$profileName.toml") -Destination $agentDestination -Force
+    }
+    if ($IncludeLegacyLocalProfiles) {
+        foreach ($profileName in @('muse-worker', 'ganglion-worker')) {
+            $existingProfile = Join-Path $agentDestination "$profileName.toml"
+            if (-not (Test-Path -LiteralPath $existingProfile)) {
+                Copy-Item -LiteralPath (Join-Path $resolvedSource "assets/legacy-agents/$profileName.toml") -Destination $existingProfile
+            }
+        }
+    }
 }
 
 if ($PSCmdlet.ShouldProcess($promptDestination, 'Install the codex-routing slash prompt')) {
@@ -87,7 +115,7 @@ if ($PSCmdlet.ShouldProcess($promptDestination, 'Install the codex-routing slash
 }
 
 if (-not $SkipGlobalInstruction) {
-    $agentsPath = Join-Path $UserRoot 'AGENTS.md'
+    $agentsPath = Join-Path $codexRoot 'AGENTS.md'
     $snippet = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'AGENTS.md.snippet')
     $startMarker = '<!-- codex-model-routing:start -->'
     $endMarker = '<!-- codex-model-routing:end -->'
@@ -121,7 +149,7 @@ Write-Output "Custom prompts: $promptDestination"
 if ($SkipGlobalInstruction) {
     Write-Output 'Global AGENTS.md instruction: skipped'
 } else {
-    Write-Output "Global AGENTS.md instruction: $(Join-Path $UserRoot 'AGENTS.md')"
+    Write-Output "Global AGENTS.md instruction: $(Join-Path $codexRoot 'AGENTS.md')"
 }
 Write-Output 'The optional routing-bypass permission profile was not enabled.'
 Write-Output 'Start a new chat or restart Codex if the updated skill is not detected automatically.'

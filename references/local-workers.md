@@ -1,109 +1,175 @@
-# Local LLM setup
+# Portable optional providers
 
-The router can delegate bounded work to a local inference service while the
-parent Codex session owns task selection, validation, and the final answer.
-The bundled adapters target existing Ganglion and Muse deployments. Configure
-their endpoint, model, and authentication settings for your environment before
-use; the bundled LAN addresses are deployment defaults, not public services.
+## Recommended design and evidence
 
-## Choose a connection
+The default is native Codex model/effort routing with neither extra provider.
+Three approaches were considered: keep named deployment profiles as defaults,
+provide one generic configured local adapter, or require an external orchestration
+service. The generic adapter preserves local inference with the least setup and
+no additional orchestrator. Named profiles remain opt-in compatibility examples.
+This is an architecture choice, not a measured claim about model quality or cost.
 
-| Connection | Worker | Requirement |
-|---|---|---|
-| Codex custom agent | `ganglion-worker` or `muse-worker` | A compatible Responses API provider and custom-agent support in the active client |
-| Bounded process worker | `scripts/invoke-ganglion-worker.ps1` | A compatible Chat Completions endpoint; this worker receives text and has no tools |
+Before this iteration, native routing and Decisions error fallback already worked
+without local services. Sharing was hindered by two named local adapters in
+admission, default registration of deployment profiles, and missing packaged
+local launchers. The new runtime keeps admission independent of execution and
+ships its complete launcher package. The installer also writes the actual Codex
+global instruction path, `~/.codex/AGENTS.md`.
 
-The profiles live in `assets/agents/` and are copied to `~/.codex/agents/`
-by the installer. Set `model` and the provider's `base_url` to match your
-deployment. Store any required key in the environment variable named by
-`env_key`, never in the profile. A catalog response alone does not establish
-that a route can complete a task. Check the protocol that the worker actually
-uses before assigning work.
+## Configuration
 
-Custom agents and provider configuration are described in the official
-[Codex subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-and [provider configuration guide](https://learn.chatgpt.com/docs/config-file/config-advanced).
+Python 3.11+ standard library only. Copy
+[`assets/routing-config.example.json`](../assets/routing-config.example.json) to
+`$CODEX_HOME/routing/config.json` (default `~/.codex/routing/config.json`), or pass
+`--config PATH` / `-ConfigPath PATH`. Configuration is external to the package;
+installation neither creates nor overwrites it. Unknown fields and invalid hard
+settings fail before a model request. Credentials are environment-variable names,
+never literal key values in JSON.
 
-## Ganglion route selection
+Both providers start disabled. A minimal baseline config is:
 
-Use PowerShell 7 (`pwsh`) or Windows PowerShell (`powershell.exe`) for the
-scripts below. Start with the ordered resource sweep:
+```json
+{"schema_version": 1}
+```
+
+To configure a local OpenAI-compatible Chat Completions service, supply your own
+endpoint and exact model. No server/model name is assumed:
+
+```json
+{
+  "schema_version": 1,
+  "local": {
+    "enabled": true,
+    "base_url": "http://127.0.0.1:8000/v1",
+    "model": "YOUR_LOCAL_MODEL",
+    "efforts": ["default"],
+    "prefer_when_eligible": true
+  },
+  "decisions": {"enabled": false}
+}
+```
+
+This is an example to edit, not an active default. Loopback is accepted; another
+host requires explicit `allow_remote: true`. Embedded URL credentials, queries,
+fragments and redirects are rejected. Local requests bypass ambient HTTP proxies.
+An optional `api_key_env` supplies local-server authentication. Know whether your
+configured gateway itself incurs charges; “local” identifies the adapter, not a
+guarantee of free inference.
+
+`efforts: ["default"]` means leave the server's effort unset. Only list other
+efforts when the server actually accepts the `reasoning_effort` parameter with
+those values. The runtime validates offered local pairs against this config.
+Do not confuse a local model's controls with the native Codex catalog.
+
+For an eligible bounded worker, add a candidate to the trusted routing packet:
+
+```json
+{"id":"local_task","action":"delegate","adapter":"local",
+ "model":"YOUR_LOCAL_MODEL","effort":"default"}
+```
+
+Set `local_work_eligible: true` only after suitability/data-handling review. The
+runtime makes one bounded `GET /models` to check advertisement, with no completion
+probe or retries. Advertisement is not proof of scheduler capacity or successful
+inference; the parent must recheck live capacity when its deployment exposes it.
+Disabled, unconfigured, missing-key, unavailable-model, invalid-auth, malformed
+and unreachable local routes are excluded while native routing continues.
+`require_local: true` instead rejects unsatisfied requests. Trusted overrides,
+conservation and execution ceilings remain hard filters.
+
+## Entrypoints and execution
+
+Windows:
 
 ```powershell
-pwsh -File .\scripts\sweep-ganglion-resources.ps1
+powershell.exe -NoProfile -File .\scripts\Invoke-Routing.ps1 -PacketPath PACKET -Offline
 ```
 
-It checks the resident broker first, including health, advertised models,
-runtime occupancy, and a bounded completion. If the broker is ready, the sweep
-stops there. If it is unavailable, the sweep checks the resident continuity
-endpoint. If it is occupied, continuity is skipped to avoid oversubscribing the
-same host. The remote gateway is considered only after resident routes cannot
-take the work. Use `-SkipCompletion` for a capacity snapshot without inference.
+Unix:
 
-| Setting | Default | Override |
-|---|---|---|
-| Resident broker | `http://127.0.0.1:8471/v1` | `GANGLION_BASE_URL` / `-LocalBaseUrl` |
-| Resident continuity | `http://127.0.0.1:8472/v1` | `GANGLION_CONTINUITY_BASE_URL` / `-ContinuityBaseUrl` |
-| Responses gateway | `http://192.168.1.216:4000/v1` | `GANGLION_GATEWAY_BASE_URL` / `-GatewayBaseUrl` |
-
-The resident route defaults to model `ganglion` and key environment variable
-`HELIOS_API_TOKEN`. The gateway defaults to `ganglion-auto` and
-`GANGLION_API_KEY`. The sweep also accepts model and key-variable overrides;
-see its parameter block. Configure the custom-agent profile separately to
-match the selected gateway; changing a sweep parameter does not edit a profile.
-
-For a Responses gateway, probe the same endpoint and model as the profile:
-
-```powershell
-pwsh -File .\scripts\test-ganglion-access.ps1 `
-  -BaseUrl http://192.168.1.216:4000/v1 `
-  -Model ganglion-auto -ApiKeyEnv GANGLION_API_KEY -WireApi Responses
+```sh
+sh scripts/invoke-routing.sh PACKET --offline
 ```
 
-For a direct Chat Completions worker:
+The PowerShell launcher uses `-PythonPath`, `CODEX_ROUTING_PYTHON`, an existing
+bundled Codex Python, or an installed Python 3.11+ interpreter, and skips Windows
+Store aliases. The Unix launcher uses `CODEX_ROUTING_PYTHON` or python3/python.
+Neither installs a runtime or changes execution policy. The Python entrypoint is
+`scripts/routing_runtime.py`. `--offline` forbids provider requests and inference;
+`--preflight-only` performs admission and configured local advertisement checks.
+It takes precedence over execution and authorization flags on every platform:
+no inference POST, Decisions request or DPAPI load occurs. It may use the local
+server's configured authentication environment variable for that read-only probe,
+including `OPENAI_API_KEY` when explicitly selected as local authentication.
+The environment key is not read for Decisions during preflight. Adding `--offline`
+also disables the advertisement check, so preflight uses no transport at all.
 
-```powershell
-pwsh -File .\scripts\test-ganglion-access.ps1
-pwsh -File .\scripts\invoke-ganglion-worker.ps1 `
-  -Prompt 'Summarize the acceptance risks in the following task packet: ...'
+Recommendations do not execute work. Explicit local execution is separate:
+
+```sh
+python3 scripts/routing_runtime.py PACKET --config CONFIG --execute-local --allow-local-inference
 ```
 
-Pass `-BaseUrl`, `-Model`, and `-ApiKeyEnv` to both scripts when the deployment
-differs from their defaults. The process worker requires an explicit bounded
-task packet and returns text for the parent to validate.
+The PowerShell equivalents are `-ExecuteLocal -AllowLocalInference`. This chooses
+an admitted configured local pair and sends one bounded text-only
+`POST /chat/completions`, no tools, streaming, retries or automatic delegation.
+`max_output_tokens` defaults to 512 (range 1–4096). The request sends `max_tokens`
+and, only for a configured non-default effort, `reasoning_effort`. Response bytes,
+request bytes and wait time are bounded. Token/cost ceilings on the whole task
+block this executor when complete execution accounting cannot be verified;
+`max_tokens` is only an output limit. Latency ceilings bound waiting, not a promise
+of remote cancellation. Model output is untrusted text for the parent to validate.
 
-## Local-worker target and waiting
+Execution failure returns an admissible native recommendation only when allowed;
+it never executes native inference or authorizes spending. Require-local or a
+binding local override stops if the required route fails. Native model/effort
+application still belongs to the parent and supported Codex controls. There is
+no automatic native dispatcher, JEV contract or deployment step.
 
-The installed prompt configures the Ganglion local-worker target:
+## Optional Decisions and credentials
 
-```text
-/prompts:codex-routing
-/prompts:codex-routing 75
-/prompts:codex-routing TARGET_PERCENT=75
-```
+Enable `decisions.enabled` or pass `--provider decisions` / `-Provider decisions`.
+A network request additionally requires explicit `--allow-api` / `-AllowApi` and
+an existing key from the configured `api_key_env` (default `OPENAI_API_KEY`).
+No key, network error, refusal, timeout or invalid output retains the safe route;
+none changes native permissions or starts paid native fallback work.
 
-With no argument the target is 50%. The policy persists in the Codex state
-directory, counts eligible worker outcomes, and waits for results by default
-with a 1,800-second budget. It counts both the direct Ganglion process route
-and the Ganglion-backed gateway as local inference. The separate Muse adapter
-is not counted as a Ganglion outcome. The target never overrides suitability,
-capacity, or the requirement to keep secrets out of task packets.
+The Windows launcher optionally loads a user-created DPAPI value at
+`$CODEX_HOME/routing/openai-key.dpapi`; use `-CredentialPath` for an existing
+external loader location. Otherwise the admitted child may use the configured
+environment key. The key is passed only in the child's environment, never command
+arguments, stdout, files in the package, or a global environment setting.
+`scripts/Set-RoutingApiKey.ps1` is an optional **human-only** hidden-entry helper;
+it rejects storage inside repositories. Installation does not run it. Unix users
+use their existing secure environment/credential mechanism. No credentials were
+created or real credentials accessed during release testing.
 
-Use `scripts/manage-codex-routing-policy.ps1` to inspect or update the policy
-and record outcomes. Read `SKILL.md` for the parent agent's routing workflow.
+The Windows launcher preserves a child's structured admission failure and exits
+with status 2. It never replaces that failure with the earlier preflight result.
+If DPAPI decryption fails, it rechecks current admission through the rules
+provider without attempting Decisions. A required route that disappeared still
+fails; an optional route may yield a current native recommendation. Failed-child
+stdout/stderr is not echoed as arbitrary diagnostic text.
 
-## Muse adapter
+Admission, exact single-candidate resolution and hard evaluator cap checks occur
+before the Windows DPAPI loader. There is no verified complete Decisions token
+counter. `max_input_tokens` / `-MaxDecisionInputTokens` and `max_cost_usd` /
+`-MaxDecisionCostUsd` therefore block a network-required decision rather than
+treating bytes or Responses token counts as proof. A single admissible candidate
+resolves locally without a key or request. See
+[decision-providers.md](decision-providers.md) for contract and pricing boundaries.
 
-The included `muse-worker` profile targets an existing LiteLLM deployment at
-`http://192.168.1.214:4000/v1` with model `muse`. Adapt the profile for another
-compatible deployment. The bundled diagnostic checks model advertisement and
-a Chat Completions request:
+## Compatibility and release state
 
-```powershell
-pwsh -File .\scripts\test-muse-access.ps1
-```
+Native profile names and the lower-level `routing_decision.py` interface remain.
+The generic runtime manages `adapter: local` from configuration. It deliberately
+does not trust legacy readiness flags as permission to contact an arbitrary
+service. Existing named custom agents remain usable through their established
+parent-controlled workflow. Legacy scripts and opt-in templates are documented
+in [legacy-local-workers.md](legacy-local-workers.md). The routing prompt reports
+status by default and supports explicit legacy share-target requests separately.
+There is no generic local-share target.
 
-Override `-BaseUrl`, `-Model`, `-MaxTokens`, or `-TimeoutSec` as needed. This
-diagnostic does not by itself verify the Responses protocol used by the custom
-agent; the gateway must support that protocol too. Neither adapter changes
-the parent session's model or global provider settings.
+Publishing changes does not update an existing installation. Install a reviewed
+revision explicitly when ready. See the dated verification record for the
+release/installed revision distinction and the scope of offline evidence.

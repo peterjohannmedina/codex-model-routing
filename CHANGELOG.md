@@ -2,6 +2,28 @@
 
 ## Unreleased — 2026-10-15
 
+- Make preflight dominate local-execution and consent flags on every platform.
+  Preserve configured local readiness authentication in Windows preflight without
+  loading DPAPI or invoking Decisions; add fake-transport and child-env regressions.
+- Preserve Windows child admission failures and nonzero exit status instead of
+  returning stale preflight success. Revalidate rules admission on credential
+  errors and cover required-local readiness loss across all credential paths.
+
+- Add a portable configured runtime, PowerShell/Unix launchers, external config
+  sample and optional human-only Windows credential entry helper. Both extra
+  providers default off; native routing needs neither credentials nor a local LLM.
+- Add generic local model/effort admission and explicit bounded Chat Completions
+  execution. Optional-provider failures preserve an admissible recommendation;
+  require-local, overrides and hard budgets never authorize a paid fallback.
+- Move named local profile templates to opt-in compatibility examples. Clean
+  installs register native profiles only and preserve existing named profiles.
+  Peter's running/private local installation is unchanged by this release work.
+
+- Fix both installers to merge global routing guidance into
+  `~/.codex/AGENTS.md`, the documented Codex global instruction location.
+  Leave the legacy user-root `~/AGENTS.md` and unrelated instructions intact;
+  add a repeated-install regression covering this discovery boundary.
+
 - Update native defaults to GPT-6 Luna, GPT-6.1 Sol, and optional GPT-6 Astra,
   verified against official guidance and the installed Codex catalog. Add
   `sol-general`; retain `terra-general` as a compatibility profile using Sol.

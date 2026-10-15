@@ -12,6 +12,6 @@ Never request, reconstruct, or transmit credentials, private keys, access tokens
 """
 
 [model_providers.litellm]
-name = "MediNAS LiteLLM"
-base_url = "http://192.168.1.214:4000/v1/"
+name = "Optional local Responses gateway (configure before use)"
+base_url = "http://127.0.0.1:8000/v1/"
 wire_api = "responses"
