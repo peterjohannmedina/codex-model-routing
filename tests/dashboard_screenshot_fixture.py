@@ -2,7 +2,6 @@
 import hashlib
 import json
 from pathlib import Path
-import subprocess
 import sys
 import time
 
@@ -13,20 +12,28 @@ import routing_state as state
 
 REVIEWED_SOURCE = 'f1423124e5cca1012ef7d64e6a44f2bc84fa703a'
 FIXTURE = ROOT / 'tests/fixtures/dashboard-screenshot.json'
-REVIEWED_FILES = ('assets/dashboard/index.html', 'assets/dashboard/app.js', 'assets/dashboard/style.css',
-                  'scripts/routing_dashboard.py', 'scripts/routing_state.py', 'scripts/routing_runtime.py',
-                  'scripts/routing_decision.py')
+# Git blob IDs from REVIEWED_SOURCE; no history fetch is needed in shallow CI.
+REVIEWED_FILES = {
+    'assets/dashboard/index.html': 'bb1b7bb63054445266d6614d2435146dc4dd5f6b',
+    'assets/dashboard/app.js': '93bc36b62cdb11e7a5eff52eac9e28575f99befe',
+    'assets/dashboard/style.css': '6087cc41fd3897a479076ccc6c85c6c786ce23f8',
+    'scripts/routing_dashboard.py': '3304374804243c997e627c3c94dc737ecc3cb9bd',
+    'scripts/routing_state.py': '6961b6c3a18c596750c3c35c0033dac3667f1b40',
+    'scripts/routing_runtime.py': 'eb2a69397602d72af1160e8f0f55f50b8431c733',
+    'scripts/routing_decision.py': '5b1d1c36408c0c0a0cf69f962c8832a9d1bf3f4b',
+}
 
 
 def reviewed_assets():
     result = {}
-    for name in REVIEWED_FILES:
-        expected = subprocess.check_output(['git', '-C', str(ROOT), 'show', REVIEWED_SOURCE + ':' + name])
+    for name, blob in REVIEWED_FILES.items():
         actual = (ROOT / name).read_bytes()
-        if actual.replace(b'\r\n', b'\n') != expected.replace(b'\r\n', b'\n'):
+        canonical = actual.replace(b'\r\n', b'\n')
+        actual_blob = hashlib.sha1(b'blob ' + str(len(canonical)).encode() + b'\0' + canonical).hexdigest()
+        if actual_blob != blob:
             raise ValueError('reviewed_source_changed')
         result[name] = {'sha256': hashlib.sha256(actual).hexdigest(),
-                        'reviewed_git_blob': subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', REVIEWED_SOURCE + ':' + name], text=True).strip()}
+                        'reviewed_git_blob': blob}
     return result
 
 

@@ -64,6 +64,14 @@ Start a new Codex chat or restart Codex after installation so the updated skill 
 
 ## Local dashboard and live observations
 
+![Routing dashboard overview with eight synthetic requests across two demo sessions, separate usage totals, activity chart, and labeled cost estimates.](docs/images/dashboard-overview.png)
+
+*Actual dashboard rendered in Chromium with synthetic demo data. The values are
+illustrative; no provider calls, real account activity or measured bills were used.*
+See the [provider controls](docs/images/dashboard-providers.png),
+[expanded activity](docs/images/dashboard-activity.png), and
+[capture provenance and reproduction steps](references/dashboard-screenshots.md).
+
 One localhost dashboard aggregates the instrumented runtime and opt-in Codex
 exec JSON streams. It includes persistent provider controls, session drilldown,
 retained daily totals, model/effort and override/fallback metadata, separate

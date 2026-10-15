@@ -39,9 +39,12 @@ The dashboard is a separate review iteration, not an installed update.
 The host's sandbox denies localhost connections with `WinError 10013`. Binding
 the test server succeeded, but connecting to it was denied. The failure was not
 retried outside that boundary. Local full suites explicitly disable only those
-two socket tests. No live dashboard/browser preview or visual browser QA is
-claimed here; DOM/fetch behavior is tested without sockets, and CI verifies the
-real HTTP event path. No server is left running on JJP.
+two socket tests. No live dashboard/browser preview is claimed on JJP; DOM/fetch
+behavior is tested without sockets, and CI verifies the real HTTP event path.
+Authorized Ubuntu CI also rendered and captured the reviewed UI with synthetic
+data using Chromium; all three actual PNGs were visually inspected. See the
+[images, exact source provenance and reproduction steps](dashboard-screenshots.md).
+No server is left running on JJP.
 
 ## Source contract and costs
 

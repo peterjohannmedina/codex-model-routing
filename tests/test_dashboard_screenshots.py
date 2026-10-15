@@ -1,4 +1,5 @@
 """Offline checks for the public screenshot fixture and exact reviewed sources."""
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -8,6 +9,18 @@ from dashboard_screenshot_fixture import ROOT, load_fixture, reviewed_assets, se
 
 
 class ScreenshotFixture(unittest.TestCase):
+    def test_published_images_match_capture_provenance(self):
+        directory = ROOT / 'docs/images'
+        provenance = json.loads((directory / 'dashboard-provenance.json').read_text(encoding='utf-8'))
+        self.assertTrue(provenance['synthetic'])
+        self.assertFalse(provenance['real_user_data'])
+        self.assertEqual(provenance['provider_calls'], 0)
+        self.assertEqual(provenance['external_browser_requests'], 0)
+        self.assertEqual(len(provenance['images']), 3)
+        for name, metadata in provenance['images'].items():
+            self.assertEqual(Path(name).name, name)
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), metadata['sha256'])
+
     def test_capture_uses_exact_reviewed_sources(self):
         self.assertEqual(len(reviewed_assets()), 7)
 
