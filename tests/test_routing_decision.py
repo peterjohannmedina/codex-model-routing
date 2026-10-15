@@ -334,6 +334,16 @@ class RoutingTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(routing.RoutingError):
                 routing.Request.parse(data)
 
+    def test_extreme_numeric_bounds_reject_without_overflow(self):
+        value = packet()
+        value["ceilings"] = {"cost_usd": 10**400}
+        with self.assertRaisesRegex(routing.RoutingError, "invalid_ceiling"):
+            routing.Request.parse(value)
+        value = packet()
+        value["candidates"][0]["cost_upper_bound_usd"] = 10**400
+        with self.assertRaisesRegex(routing.RoutingError, "invalid_budget"):
+            routing.Request.parse(value)
+
     def test_cli_offline_default_and_error_code(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
             path = Path(directory) / "packet.json"

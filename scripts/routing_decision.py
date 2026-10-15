@@ -48,8 +48,8 @@ def object_fields(value: object, allowed: set[str], required: set[str]) -> dict:
 
 
 def number(value: object, minimum: float, maximum: float) -> bool:
-    return (type(value) in (int, float) and math.isfinite(value)
-            and minimum <= value <= maximum)
+    return (type(value) in (int, float) and minimum <= value <= maximum
+            and math.isfinite(value))
 
 
 def read_json(text: str) -> object:
