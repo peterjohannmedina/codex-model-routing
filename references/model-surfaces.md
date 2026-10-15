@@ -87,7 +87,7 @@ For a personal installation:
 
 1. Copy the package to `~/.codex/skills/codex-model-routing/`.
 2. Copy `assets/agents/*.toml` to `~/.codex/agents/`.
-3. Merge `assets/AGENTS.md.snippet` into the user's home `AGENTS.md` when routing should apply to every nontrivial task under that home directory.
+3. Merge `assets/AGENTS.md.snippet` into the user's Codex home `~/.codex/AGENTS.md` when routing should apply across projects. A user-root `~/AGENTS.md` is not the Codex global instruction file. Preserve unrelated instructions and keep local customizations outside the package's marked block.
 4. Do not enable `assets/profiles/routing-bypass.config.toml` unless the user explicitly requests that permission profile.
 5. Start a new chat or restart Codex if the updated skill or custom agents are not detected automatically.
 

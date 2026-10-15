@@ -8,7 +8,7 @@ Usage: scripts/install.sh [--source-root PATH] [--user-root PATH] [--skip-global
 
 Installs the skill at USER_ROOT/.codex/skills/codex-model-routing, the custom
 agent profiles at USER_ROOT/.codex/agents, and—unless skipped—the marked
-routing block in USER_ROOT/AGENTS.md.
+routing block in USER_ROOT/.codex/AGENTS.md.
 EOF
 }
 
@@ -97,7 +97,7 @@ cp "$source_root"/assets/agents/*.toml "$agent_destination/"
 cp "$source_root"/assets/prompts/codex-routing.md "$prompt_destination/"
 
 if [ "$skip_global_instruction" = false ]; then
-    agents_path=$user_root/AGENTS.md
+    agents_path=$user_root/.codex/AGENTS.md
     temp_agents=$(mktemp "${TMPDIR:-/tmp}/codex-model-routing-agents.XXXXXX")
     trap 'rm -f "$temp_agents"' EXIT HUP INT TERM
 
@@ -126,7 +126,7 @@ printf 'Custom prompts: %s\n' "$prompt_destination"
 if [ "$skip_global_instruction" = true ]; then
     printf 'Global AGENTS.md instruction: skipped\n'
 else
-    printf 'Global AGENTS.md instruction: %s\n' "$user_root/AGENTS.md"
+    printf 'Global AGENTS.md instruction: %s\n' "$user_root/.codex/AGENTS.md"
 fi
 printf 'The optional routing-bypass permission profile was not enabled.\n'
 printf 'Start a new chat or restart Codex if the updated skill is not detected automatically.\n'

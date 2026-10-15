@@ -26,7 +26,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
 PowerShell 7 (`pwsh`) can run the same installer.
 
-Both installers copy the complete skill to `~/.codex/skills/codex-model-routing`, register the bundled custom-agent profiles, install the routing prompt, and merge the routing instructions into `~/AGENTS.md`. On Windows, `~` means the current user's profile directory.
+Both installers copy the complete skill to `~/.codex/skills/codex-model-routing`, register the bundled custom-agent profiles, install the routing prompt, and merge the routing instructions into `~/.codex/AGENTS.md`. On Windows, `~` means the current user's profile directory.
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 

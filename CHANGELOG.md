@@ -2,6 +2,11 @@
 
 ## Unreleased — 2026-10-15
 
+- Fix both installers to merge global routing guidance into
+  `~/.codex/AGENTS.md`, the documented Codex global instruction location.
+  Leave the legacy user-root `~/AGENTS.md` and unrelated instructions intact;
+  add a repeated-install regression covering this discovery boundary.
+
 - Update native defaults to GPT-6 Luna, GPT-6.1 Sol, and optional GPT-6 Astra,
   verified against official guidance and the installed Codex catalog. Add
   `sol-general`; retain `terra-general` as a compatibility profile using Sol.

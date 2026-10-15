@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import threading
 import time
@@ -413,6 +414,28 @@ class RoutingTests(unittest.TestCase):
 
 
 class PackageTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows PowerShell installer regression')
+    def test_installer_updates_codex_global_guidance_and_preserves_other_instructions(self):
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            user = Path(directory)
+            (user / '.codex').mkdir()
+            legacy = user / 'AGENTS.md'
+            legacy.write_text('Preserve unrelated user-root instructions.\n', encoding='utf-8')
+            global_file = user / '.codex' / 'AGENTS.md'
+            unrelated = 'Preserve global instructions: café.\n'
+            global_file.write_text(unrelated, encoding='utf-8')
+            for _ in range(2):
+                result = subprocess.run(['powershell.exe', '-NoProfile', '-File',
+                    str(ROOT / 'scripts' / 'install.ps1'), '-UserRoot', str(user)],
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(legacy.read_text(), 'Preserve unrelated user-root instructions.\n')
+            updated = global_file.read_text(encoding='utf-8-sig')
+            self.assertTrue(updated.startswith(unrelated))
+            self.assertEqual(updated.count('<!-- codex-model-routing:start -->'), 1)
+            self.assertIn('Apply `$codex-model-routing`', updated)
+            self.assertFalse((user / '.codex' / 'config.toml').exists())
+
     def test_native_profiles_match_current_codex_combinations(self):
         import tomllib
         expected = {"luna-efficient": ("gpt-6-luna", "high"),

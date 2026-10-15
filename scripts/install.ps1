@@ -87,7 +87,7 @@ if ($PSCmdlet.ShouldProcess($promptDestination, 'Install the codex-routing slash
 }
 
 if (-not $SkipGlobalInstruction) {
-    $agentsPath = Join-Path $UserRoot 'AGENTS.md'
+    $agentsPath = Join-Path $codexRoot 'AGENTS.md'
     $snippet = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path (Join-Path $resolvedSource 'assets') 'AGENTS.md.snippet')
     $startMarker = '<!-- codex-model-routing:start -->'
     $endMarker = '<!-- codex-model-routing:end -->'
@@ -121,7 +121,7 @@ Write-Output "Custom prompts: $promptDestination"
 if ($SkipGlobalInstruction) {
     Write-Output 'Global AGENTS.md instruction: skipped'
 } else {
-    Write-Output "Global AGENTS.md instruction: $(Join-Path $UserRoot 'AGENTS.md')"
+    Write-Output "Global AGENTS.md instruction: $(Join-Path $codexRoot 'AGENTS.md')"
 }
 Write-Output 'The optional routing-bypass permission profile was not enabled.'
 Write-Output 'Start a new chat or restart Codex if the updated skill is not detected automatically.'
