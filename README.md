@@ -38,7 +38,33 @@ The routing skill is intended to apply automatically to nontrivial work. It can 
 $codex-model-routing
 ```
 
-The router chooses whether to keep work in the current session or delegate a bounded task. Bundled native profiles cover Luna, Terra, Sol, and an optional Astra integrator; availability depends on the active Codex environment.
+The router chooses whether to keep work in the current session or delegate a bounded task. Native defaults are GPT-6 Luna (`high`), GPT-6.1 Sol (`low`, or `high` for expert work), and optional GPT-6 Astra (`low`). GPT-6 Sol remains a compatibility route. Availability and supported efforts depend on the active Codex catalog. `terra-general` remains an alias profile for existing callers and now uses GPT-6.1 Sol; new tasks should use `sol-general`.
+
+## Decisions routing provider
+
+An optional Python 3.11+ helper (standard library only) implements a provider
+interface with offline rules and OpenAI Decisions. Decisions selects one complete
+model/effort/action combination from prevalidated candidates, considering quality,
+budget, token efficiency, latency, and context transfer. Direct-user model or
+effort overrides take precedence over automatic selection; hard eligibility and
+budget constraints still apply. "High intelligence" is a quality preference.
+
+```sh
+python scripts/routing_decision.py assets/routing-packet.example.json
+python -m unittest discover -s tests -v
+```
+
+The default makes no API calls. Selecting `--provider decisions` also requires
+`--allow-api` and an existing `OPENAI_API_KEY` in the environment. Installation
+does not enable spending, obtain credentials, or change the user's main model.
+Refusal, invalid output, network errors and timeout return the parent's safe
+route. Recommendations do not execute work. See
+[provider configuration, trust boundary and contract](references/decision-providers.md)
+for enabling it after authorization, packet fields, provenance, budgets, costs,
+and the remaining live-validation requirements.
+
+See [implementation verification](references/verification-2026-10-15.md) for
+the dated source evidence and offline checks performed for this change.
 
 ## Optional local LLM delegation
 

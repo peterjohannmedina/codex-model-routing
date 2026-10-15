@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — 2026-10-15
+
+- Update native defaults to GPT-6 Luna, GPT-6.1 Sol, and optional GPT-6 Astra,
+  verified against official guidance and the installed Codex catalog. Add
+  `sol-general`; retain `terra-general` as a compatibility profile using Sol.
+- Add an optional standard-library Python decision-provider interface, offline
+  rules fallback, and opt-in OpenAI Decisions integration selecting complete
+  model/effort pairs. Keep eligibility, trusted component overrides, conservation,
+  and declared budget ceilings outside model discretion.
+- Bound decision latency and request/response sizes, disable automatic retries,
+  validate choice/refusal/distribution output, and emit sanitized provenance.
+- Document configuration, API costs, trust boundaries, model-effort compatibility,
+  execution-budget responsibilities, and the live validation still required.
+  Add offline behavioral tests. Local adapters and their dispatch policy are
+  unchanged; no global installation, deployment, or metered validation occurred.
+- Remove the global instruction snippet's unsupported universal warm-cache-loss
+  claim, aligning it with the existing switching-economics evidence boundary.
+
 ## 2026-09-22
 
 ### Added

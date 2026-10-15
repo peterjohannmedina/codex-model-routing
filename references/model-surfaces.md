@@ -1,19 +1,40 @@
 # Codex routing surfaces
 
-Verified against the local Codex manual on 2026-08-04.
+Verified 2026-10-15 against [official model guidance](https://learn.chatgpt.com/docs/models),
+the installed Codex CLI 0.162.1 help, and its local `models_cache.json` catalog
+(fetched 2026-10-15, catalog client version 0.162.0). A local catalog is runtime
+selection evidence for this host, not a guarantee of access on another account.
 
-## Models
+## Models and reasoning effort
 
-- `gpt-5.6-sol`: detail, polish, difficult open-ended work, complex coding, research, computer use, and security.
-- `gpt-5.6-terra`: the everyday balance of capability, latency, and cost; particularly useful for read-heavy subagents.
-- `gpt-5.6-luna`: fastest and lowest-cost GPT-5.6 option for clear, repeatable tasks with an explicit success shape.
+| Route | Exact ID | Package starting effort | Observed Codex efforts |
+| --- | --- | --- | --- |
+| Luna | `gpt-6-luna` | `high` (`max` in conservation mode) | low, medium, high, xhigh, max |
+| Sol | `gpt-6.1-sol` | `low` (expert profile: `high`) | low, medium, high, xhigh, max, ultra |
+| Previous Sol | `gpt-6-sol` | retain current supported effort | low, medium, high, xhigh, max, ultra |
+| Astra | `gpt-6-astra` | `low` | low, medium, high, xhigh, max, ultra |
 
-Reasoning effort is independent of the model. Prefer the lowest supported effort that meets the quality bar.
+Official guidance recommends GPT-6.1 Sol for complex coding and Luna for focused,
+repeatable work, starting at High for Luna or Light (`low`) for Astra. These are
+starting policies rather than a universal ordering of model/effort pairs. Compare
+task quality, available budgets, token use and latency jointly. The latest Sol
+rollout depends on plan, client, and workspace settings; preserve a capable
+explicitly selected model rather than switching merely because another is newer.
 
-The optional `astra-integrator` profile preserves the Gitea Astra route
-(`gpt-6-astra`, `high`) for sustained integration and runtime investigation.
-Use it only when the active model catalog exposes it; inclusion in this package
-does not establish availability or require changing the parent model.
+GPT-5.6 Luna, Terra, and Sol remain visible in the observed catalog during rollout;
+they are compatibility routes, not the defaults. No `gpt-6-terra` model was found.
+`sol-general` replaces the everyday Terra role with GPT-6.1 Sol. The old
+`terra-general` filename/name remains as a compatibility profile using the same
+Sol model/effort, so updates do not strand existing callers or obsolete profiles.
+The optional `astra-integrator` uses GPT-6 Astra at `low`; increase effort when
+the task warrants it. None of the native profiles uses a custom model provider.
+
+Codex supports `ultra` on observed Sol/Astra routes as an orchestration mode;
+Luna does not support it. API reasoning parameters are a different contract:
+do not copy API `none` or omit surface checks because a model page lists an
+API capability. The installed Codex catalog did not offer `none` on these routes.
+The separate Decisions evaluator currently supports only `gpt-6-luna` and receives
+no Codex effort parameter. See [decision-providers.md](decision-providers.md).
 
 ## Thread and model behavior
 
