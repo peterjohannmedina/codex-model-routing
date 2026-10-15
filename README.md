@@ -68,9 +68,22 @@ Start a new Codex chat or restart Codex after installation so the updated skill 
 
 *Actual dashboard rendered in Chromium with synthetic demo data. The values are
 illustrative; no provider calls, real account activity or measured bills were used.*
-See the [provider controls](docs/images/dashboard-providers.png),
-[expanded activity](docs/images/dashboard-activity.png), and
-[capture provenance and reproduction steps](references/dashboard-screenshots.md).
+See [capture provenance and reproduction steps](references/dashboard-screenshots.md).
+
+<details>
+<summary>Provider controls and activity screenshots (synthetic demo)</summary>
+
+![Dashboard provider controls showing independent Decisions and local LLM settings, historical observations, and local history retention controls.](docs/images/dashboard-providers.png)
+
+*Saved provider settings and historical observations. Saving settings does not
+run inference or grant spending permission.*
+
+![Dashboard activity ledger with eight synthetic requests and one expanded local execution showing dummy identifiers, model and effort, execution status, and separate evaluator and downstream usage.](docs/images/dashboard-activity.png)
+
+*Synthetic activity with dummy identifiers and illustrative usage. A recommendation
+is displayed separately from an observed execution.*
+
+</details>
 
 One localhost dashboard aggregates the instrumented runtime and opt-in Codex
 exec JSON streams. It includes persistent provider controls, session drilldown,
