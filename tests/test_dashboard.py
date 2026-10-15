@@ -156,13 +156,27 @@ class LocalState(unittest.TestCase):
 
     def test_collector_replay_late_updates_and_live_disable(self):
         stream, session = str(uuid.uuid4()), str(uuid.uuid4())
-        collector = collect.Collector(self.ledger, stream)
+        collector = collect.Collector(self.ledger, stream, model='gpt-6.1-sol', effort='low')
         values = [{'type':'thread.started','thread_id':session}, {'type':'turn.started'},
                   {'type':'item.started','item':{'id':'item_1','type':'command_execution','command':'private command'}},
                   {'type':'item.completed','item':{'id':'item_1','type':'command_execution','aggregated_output':'private output'}},
                   {'type':'turn.completed','usage':{'input_tokens':10}}]
         for value in values: collector.consume(value)
-        collect.Collector(self.ledger, stream).consume(values[-1])
+        partial = collect.Collector(self.ledger, stream)
+        partial.consume(values[-1])
+        rows = self.ledger.snapshot()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['session_id'], session, 'partial replay reassigned the authoritative thread session')
+        self.assertEqual((rows[0]['model'],rows[0]['effort'],rows[0]['model_source']),
+                         ('gpt-6.1-sol','low','collector_annotation'))
+        self.assertEqual(dashboard.Store(self.root).snapshot(session)['totals']['requests'], 1)
+        partial.consume({'type':'turn.completed','usage':{'output_tokens':3}})
+        partial.close()
+        rows = self.ledger.snapshot()
+        self.assertEqual(rows[0]['session_id'], session)
+        self.assertEqual((rows[0]['model'],rows[0]['effort']), ('gpt-6.1-sol','low'))
+        self.assertEqual(rows[0]['downstream_usage']['input_tokens'], 10)
+        self.assertEqual(rows[0]['downstream_usage']['output_tokens'], 3)
         # Replay from the beginning must produce the same canonical request/session.
         replay = collect.Collector(self.ledger, stream)
         for value in values: replay.consume(value)
@@ -175,6 +189,22 @@ class LocalState(unittest.TestCase):
         self.assertNotIn(b'private ', self.ledger.path.read_bytes())
         disabled = collect.Collector(self.ledger, str(uuid.uuid4()), settings_loader=lambda: state.LedgerSettings(enabled=False))
         self.assertFalse(disabled.consume({'type':'turn.started'}))
+
+    def test_late_thread_identity_enriches_completion_and_rejects_conflicts(self):
+        stream, session = str(uuid.uuid4()), str(uuid.uuid4())
+        original = collect.Collector(self.ledger,stream)
+        original.consume({'type':'turn.completed','usage':{'input_tokens':0,'output_tokens':2}})
+        late = collect.Collector(self.ledger,stream)
+        late.consume({'type':'thread.started','thread_id':session})
+        late.close()
+        stored = self.ledger.snapshot()[0]
+        self.assertEqual(stored['session_id'],session)
+        self.assertEqual(stored['session_source'],'codex_thread')
+        self.assertEqual(stored['execution_status'],'completed')
+        self.assertEqual(stored['downstream_usage']['output_tokens'],2)
+        with self.assertRaises(ValueError):
+            collect.Collector(self.ledger,stream).consume({'type':'thread.started','thread_id':str(uuid.uuid4())})
+        self.assertEqual(self.ledger.snapshot()[0]['session_id'],session)
 
     def test_collector_bounds_and_malformed_lines(self):
         collector = collect.Collector(self.ledger, str(uuid.uuid4()))
@@ -212,6 +242,7 @@ class DashboardHTTP(unittest.TestCase):
         self.assertEqual(self.request('GET','/api/session')[0].status,403)
         launch = self.server.create_launch_file()
         self.assertTrue(launch.is_file())
+        self.assertIn('/#authorize=',launch.read_text())
         if os.name != 'nt': self.assertEqual(launch.stat().st_mode & 0o777, 0o600)
         response, body = self.request('POST','/api/auth','{}',{'Origin':self.server.origin,
             'Content-Type':'application/json','X-Routing-Bootstrap':self.server.bootstrap})
@@ -249,7 +280,12 @@ class DashboardHTTP(unittest.TestCase):
         payload={'config':json.loads(data)['config'], 'version':json.loads(data)['config_version']}
         for extra in ({'Origin':'null'}, {'X-Routing-CSRF':''}, {'Host':'localhost:'+str(self.server.server_port)}):
             self.assertEqual(self.authenticated('POST','/api/config',payload,**extra)[0].status,403)
-        self.assertEqual(self.authenticated('POST','/api/config',payload)[0].status,200)
+        payload['config']['local']['enabled'] = True
+        response, saved = self.authenticated('POST','/api/config',payload)
+        self.assertEqual(response.status,200)
+        saved_version = json.loads(saved)['config_version']
+        self.assertNotEqual(saved_version,payload['version'])
+        self.assertEqual(saved_version,json.loads(self.authenticated('GET','/api/state')[1])['config_version'])
         self.assertEqual(self.authenticated('POST','/api/config',{'config':payload['config'],'version':'stale'})[0].status,409)
         self.assertEqual(self.authenticated('POST','/api/config',{'large':'x'*33000})[0].status,413)
         self.assertEqual(self.authenticated('GET','/../../config.json')[0].status,404)

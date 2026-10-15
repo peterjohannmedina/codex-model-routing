@@ -30,11 +30,11 @@ const fetch=async(url,options)=>{
   assert.equal(options.headers['X-Routing-CSRF'],'synthetic-csrf');
   if(url==='/api/config') {const body=JSON.parse(options.body);assert.equal(body.version,'v1');data.config=body.config;data.config_version='v3';}
   if(url==='/api/ledger/clear') {assert.deepEqual(JSON.parse(options.body),{confirm:true});data.events=[];data.totals.requests=0;}
-  return {ok:true,json:async()=>({saved:true})};
+  return {ok:true,json:async()=>({saved:true,config_version:data.config_version})};
 };
 let fragmentRemoved=false;
 const storage=new Map();
-const context=vm.createContext({sessionStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k)||null},location:{hash:'#synthetic-bootstrap',pathname:'/'},history:{replaceState:(_a,_b,path)=>{assert.equal(path,'/');fragmentRemoved=true;}},document:{hidden:false,getElementById:id=>{assert.ok(nodes[id],'unknown HTML id '+id);return nodes[id];},createElement:tag=>new Element(tag),createElementNS:(_ns,tag)=>new Element(tag)},fetch,setTimeout,clearTimeout,AbortController,structuredClone,setInterval:fn=>{interval=fn;},confirm:()=>confirmed});
+const context=vm.createContext({sessionStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k)||null},location:{hash:'#authorize=synthetic-bootstrap',pathname:'/'},history:{replaceState:(_a,_b,path)=>{assert.equal(path,'/');fragmentRemoved=true;}},document:{hidden:false,getElementById:id=>{assert.ok(nodes[id],'unknown HTML id '+id);return nodes[id];},createElement:tag=>new Element(tag),createElementNS:(_ns,tag)=>new Element(tag)},fetch,setTimeout,clearTimeout,AbortController,structuredClone,setInterval:fn=>{interval=fn;},confirm:()=>confirmed});
 vm.runInContext(fs.readFileSync(path.join(root,'assets/dashboard/app.js'),'utf8'),context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{

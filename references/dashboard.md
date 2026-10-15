@@ -53,7 +53,10 @@ configuration, ledger or credentials. Existing user config, personal profiles,
 private launchers and encrypted values are not migrated or changed by this PR.
 
 Save controls use a config version to reject conflicting edits from other tabs.
-Live polling preserves unsaved edits. Reload saved settings after a conflict;
+Live polling preserves unsaved edits. Edits made while a save is pending remain
+unsaved after that earlier snapshot is stored; a response never clears a newer
+edit revision. The saved snapshot's version supports the next save, while stale
+poll responses cannot refill the form. Reload saved settings after a conflict;
 the server writes the validated config atomically. The environment-variable
 fields accept **names only**. There is no key-value form, credential endpoint or
 credential-presence probe. URL credentials, query strings and fragments are
@@ -120,7 +123,12 @@ inspect the completion/failure evidence and the originating command's status.
 
 One stream ID represents one invocation/turn. Reuse it only to replay that same
 stream: the canonical request upserts instead of summing twice. Late usage fills
-the existing request, including reported zero. Multiple stream IDs can aggregate
+the existing request, including reported zero. An observed thread ID takes
+precedence over the stream fallback, including partial replays that omit
+`thread.started`; absent model/effort annotations preserve existing annotations.
+A conflicting authoritative thread ID for the same invocation is rejected.
+Deduplication applies to retained requests; replay after pruning creates a new
+retained entry. Multiple stream IDs can aggregate
 under the same source thread ID. A source thread change within one stream is
 rejected. Model and effort are often absent from this stream; optional `--model`
 and `--effort` are explicitly labeled operator annotations. They do not change
@@ -196,7 +204,9 @@ HTML alone yields no cookie. A random per-process HttpOnly SameSite browser cook
 and a tab-scoped capability in sessionStorage gate all API reads and writes.
 Cookie possession alone cannot retrieve that capability, including from another
 localhost port. The bootstrap travels in a URL
-fragment, not an HTTP query or access log; the browser removes it immediately.
+`#authorize=` fragment, not an HTTP query or access log; the browser removes it
+immediately. Navigation anchors such as `#providers` and `#activity` remain
+navigation anchors and reuse the tab's stored authorization on refresh.
 Other control tokens remain in process/browser session state. These are not provider
 credentials. There is no CORS allowance. CSP blocks external
 assets/frames and unsafe script; request bytes, read time and concurrency are

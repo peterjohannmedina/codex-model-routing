@@ -22,6 +22,10 @@ import routing_state as state
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/dashboard'
 
 
+def config_version(config):
+    return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+
+
 def safe_config(raw):
     config = runtime.Config.parse(raw)
     for value in (config.local.model, config.local.base_url):
@@ -45,7 +49,7 @@ class Store:
 
     def config(self):
         config = safe_config(core.load_file(self.path)) if self.path.is_file() else safe_config({'schema_version': 1})
-        version = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+        version = config_version(config)
         return config, version
 
     def save(self, raw, expected):
@@ -63,7 +67,8 @@ class Store:
                 os.replace(name, self.path)
             finally:
                 Path(name).unlink(missing_ok=True)
-        return self.config()
+        # Return the version of this write, not a later concurrent writer's state.
+        return config, config_version(config)
 
     def snapshot(self, session=None):
         config, version = self.config()
@@ -108,7 +113,7 @@ class Server(ThreadingHTTPServer):
         self.launch_path = Path(name)
         with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
             stream.write('<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=' +
-                         self.origin + '/#' + self.bootstrap + '"><title>Opening local routing dashboard</title>Opening the local routing dashboard…')
+                         self.origin + '/#authorize=' + self.bootstrap + '"><title>Opening local routing dashboard</title>Opening the local routing dashboard…')
         return self.launch_path
 
     def authorize(self, token):
@@ -229,8 +234,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {'authorized': True, 'csrf': self.server.csrf}, cookie=True)
             if self.path == '/api/config':
                 core.object_fields(raw, {'config', 'version'}, {'config', 'version'})
-                self.server.store.save(raw['config'], raw['version'])
-                return self.reply(200, {'saved': True})
+                _, version = self.server.store.save(raw['config'], raw['version'])
+                return self.reply(200, {'saved': True, 'config_version': version})
             if self.path == '/api/ledger/clear':
                 if raw != {'confirm': True}: raise ValueError()
                 state.Ledger(self.server.store.root).clear()

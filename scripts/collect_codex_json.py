@@ -22,11 +22,12 @@ class Collector:
         self.thread = None
         self.seen = False
         self.event = {'source': 'codex_exec', 'session_id': self.session, 'request_id': self.request,
-                      'stage': 1, 'mode': 'exec_stream', 'model': state.label(model), 'effort': state.label(effort),
-                      'model_source': 'collector_annotation' if model or effort else 'unobserved',
+                      'session_source': 'stream_fallback', 'stage': 1, 'mode': 'exec_stream',
                       'adapter': 'native', 'execution_status': 'started', 'evaluator_attempts': 0,
                       'stream_status': 'open',
                       'evaluator_usage': {'input_tokens': 0, 'output_tokens': 0}}
+        annotation = {key: value for key, raw in (('model', model), ('effort', effort)) if (value := state.label(raw)) is not None}
+        if annotation: self.event.update(annotation, model_source='collector_annotation')
 
     def consume(self, raw):
         if not isinstance(raw, dict): return False
@@ -37,6 +38,7 @@ class Collector:
             if self.thread is not None and incoming != self.thread: raise ValueError('one_invocation_per_stream')
             self.thread = self.session = incoming
             self.event['session_id'] = self.session
+            self.event['session_source'] = 'codex_thread'
         elif kind == 'turn.started':
             pass  # One exec invocation/turn per stream-id, including replay.
         elif kind in ('item.started', 'item.completed', 'item.updated'):

@@ -6,7 +6,7 @@ The dashboard is a separate review iteration, not an installed update.
 
 ## Evidence
 
-- 69 Python tests pass locally on Windows/Python 3.12, with one Unix-only and
+- 70 Python tests pass locally on Windows/Python 3.12, with one Unix-only and
   two explicitly disabled socket integration tests skipped. The routing,
   private-credential fixture, admission, install and provider matrix regressions
   remain included. All new test data/credentials are synthetic.
@@ -19,6 +19,11 @@ The dashboard is a separate review iteration, not an installed update.
   cover replay/expiry; HTTP tests cover authenticated bootstrap and file cleanup;
   fake-DOM tests cover nonce handoff and removal from browser history. API reads
   also require the tab's capability header; a host-scoped cookie alone is denied.
+- Independent review regressions first failed at `799ef9c`, then passed after
+  fixes: immediate partial-replay session/annotation assertions before full
+  replay, late thread-identity enrichment/conflict rejection, authorized anchor
+  refresh, failed-bootstrap recovery with existing capability, and delayed saves
+  preserving newer edits and their next-save version. Both Node suites run in CI.
 - Both shell scripts pass Git Bash syntax checks. `git diff --check` passes.
 - CI requires real HTTP tests (socket denial becomes a failure, not a skip).
   Read the dashboard PR's exact-head Windows/Ubuntu × Python 3.11/3.12 results.

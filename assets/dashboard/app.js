@@ -1,6 +1,7 @@
 'use strict';
 const byId = id => document.getElementById(id);
 let csrf = '', formVersion = '', dirty = false, polling = false, loaded = false;
+let editRevision = 0, formEpoch = 0, saving = false;
 const fields = {
   decisions: {'enabled':'decisions-enabled','api_key_env':'decisions-key-env','timeout_seconds':'decisions-timeout','minimum_confidence':'decisions-confidence','max_input_tokens':'decision-token-cap','max_cost_usd':'decision-cost-cap'},
   local: {'enabled':'local-enabled','base_url':'local-url','model':'local-model','api_key_env':'local-key-env','efforts':'local-efforts','timeout_seconds':'local-timeout','max_output_tokens':'local-output','allow_remote':'local-remote','prefer_when_eligible':'local-prefer'},
@@ -56,6 +57,7 @@ function renderEvents(events) {
     values.forEach((value,i)=>{ const span=document.createElement('span'); span.textContent=value; if(i===2)span.className='event-source'; if(i===3)span.className='event-status'; summary.append(span); });
     const list=document.createElement('dl');
     addDetail(list,'Session',event.session_id); addDetail(list,'Request',event.request_id);
+    addDetail(list,'Session evidence',event.session_source || (event.session_id==='unassigned'?'Unassigned':'Caller-assigned UUID'));
     addDetail(list,'Source / mode',event.source+' / '+(event.mode || 'unknown'));
     addDetail(list,'Model evidence',event.model_source); addDetail(list,'Execution',event.execution_status);
     addDetail(list,'Execution request model / effort',(event.execution_model || 'Unobserved')+' / '+(event.execution_effort || 'Unobserved'));
@@ -84,7 +86,7 @@ function renderChart(days) {
   });
   text('daily-summary',selected.length ? selected.map(d=>d.day+': '+d.requests+' requests / '+d.completed_executions+' completed').join(' · ') : 'No retained activity yet.');
 }
-function render(data) {
+function render(data, formFresh = true) {
   const totals=data.totals;
   text('requests',number(totals.requests)); text('executions',number(totals.completed_executions));
   for(const name of ['evaluator','downstream']) {
@@ -103,30 +105,44 @@ function render(data) {
     const observed=data.events.find(e=>name==='local'?e.local_status&&e.local_status!=='disabled':e.evaluator_attempts>0||e.fallback_reason==='missing_api_key');
     text(name+'-observed',observed?'Last observation: '+(name==='local'?observed.local_status:observed.fallback_reason||'response received')+' · '+time(observed.observed_at)+' (historical)':'Last observation: unobserved');
   }
-  if(!dirty)fill(data.config,data.config_version);
+  if(!dirty&&!saving&&formFresh)fill(data.config,data.config_version);
   renderEvents(data.events);renderChart(data.daily);
   text('updated','Refreshed '+time(data.observed_at)+' · local observation time');text('connection','Dashboard live · 2s');
 }
 async function refresh(){
   if(polling)return;polling=true;
-  try{render(await api('/api/state'+(byId('session').value?'?session='+encodeURIComponent(byId('session').value):'')));text('message','');}
+  const pollEpoch=formEpoch;
+  try{const data=await api('/api/state'+(byId('session').value?'?session='+encodeURIComponent(byId('session').value):''));render(data,pollEpoch===formEpoch);text('message','');}
   catch(error){text('connection','Disconnected');text('message','Local data unavailable: '+error.message+'. The last displayed values may be stale.');byId('message').className='error';}
   finally{polling=false;}
 }
-byId('config-form').addEventListener('input',()=>{dirty=true;text('save-status','Unsaved changes. Live observations continue.');});
+byId('config-form').addEventListener('input',()=>{editRevision++;dirty=true;text('save-status','Unsaved changes. Live observations continue.');});
 byId('config-form').addEventListener('submit',async event=>{
-  event.preventDefault();if(!loaded)return;byId('save').disabled=true;
-  try{await api('/api/config',{config:readForm(),version:formVersion});dirty=false;await refresh();text('save-status','Saved locally. No provider request was made.');}
+  event.preventDefault();if(!loaded||saving)return;
+  const submittedRevision=editRevision, snapshot=readForm(), version=formVersion;
+  saving=true;formEpoch++;byId('save').disabled=true;byId('reload').disabled=true;
+  try{
+    const saved=await api('/api/config',{config:snapshot,version});
+    if(saved.config_version)formVersion=saved.config_version;
+    dirty=editRevision!==submittedRevision;
+    await refresh();
+    dirty=editRevision!==submittedRevision;
+    text('save-status',dirty?'Saved earlier snapshot; newer edits remain unsaved.':'Saved locally. No provider request was made.');
+  }
   catch(error){text('save-status','Save failed: '+error.message+'. Reload saved settings before retrying if another writer changed them.');}
-  finally{byId('save').disabled=false;}
+  finally{saving=false;byId('save').disabled=false;byId('reload').disabled=false;}
 });
-byId('reload').addEventListener('click',()=>{dirty=false;refresh();});
+byId('reload').addEventListener('click',()=>{if(saving)return;formEpoch++;dirty=false;refresh();});
 byId('session').addEventListener('change',refresh);
 byId('clear').addEventListener('click',async()=>{if(!confirm('Delete retained local usage metadata? This does not change provider settings or erase filesystem backups.'))return;try{await api('/api/ledger/clear',{confirm:true});await refresh();}catch(error){text('message','Could not clear history: '+error.message);}});
 (async()=>{try{
-  const bootstrap=location.hash.slice(1);
-  if(bootstrap){try{const authorization=await api('/api/auth',{},bootstrap);sessionStorage.setItem('routing-csrf',authorization.csrf);}finally{history.replaceState(null,'',location.pathname);}}
   csrf=sessionStorage.getItem('routing-csrf') || '';
+  const prefix='#authorize=';
+  if(location.hash.startsWith(prefix)){
+    try{const authorization=await api('/api/auth',{},location.hash.slice(prefix.length));csrf=authorization.csrf;sessionStorage.setItem('routing-csrf',csrf);}
+    catch(error){if(!csrf)throw error;}
+    finally{history.replaceState(null,'',location.pathname);}
+  }
   csrf=(await api('/api/session')).csrf;await refresh();
 }catch(error){text('message','Open the private one-use launch file from the server terminal to authorize this browser. Restart the server if the file expired.');}
 setInterval(()=>{if(!document.hidden)refresh();},2000);})();

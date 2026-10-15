@@ -2,6 +2,10 @@
 
 ## Unreleased — 2026-10-15
 
+- Preserve authoritative Codex thread identity and known annotations across
+  partial replay; distinguish authorization fragments from navigation anchors;
+  preserve edits made while an earlier configuration snapshot is being saved.
+
 - Add a standalone loopback dashboard with persistent optional-provider controls,
   bounded local metadata ledger, session scope, daily totals, live polling and
   separate evaluator/downstream usage and estimated costs. No provider traffic

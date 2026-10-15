@@ -76,6 +76,8 @@ def sanitize(raw):
     if source not in ('router', 'codex_exec'): raise ValueError('invalid_source')
     result = {'source': source, 'session_id': identifier(raw.get('session_id')),
               'request_id': identifier(raw.get('request_id'), allow_unassigned=False), 'stage': raw.get('stage', 2)}
+    result['session_source'] = raw.get('session_source')
+    if result['session_source'] not in (None, 'stream_fallback', 'codex_thread'): raise ValueError('invalid_session_source')
     if type(result['stage']) is not int or result['stage'] not in (0, 1, 2): raise ValueError('invalid_stage')
     for key in ('model', 'effort', 'adapter', 'override_model', 'override_effort', 'fallback_reason',
                 'local_status', 'execution_status', 'model_source', 'mode', 'error', 'stream_status',
@@ -122,6 +124,24 @@ class Ledger:
             old = connection.execute('SELECT body FROM events WHERE id=?', (event_id,)).fetchone()
             if old:
                 previous = json.loads(old[0])
+                if event['source'] == 'codex_exec':
+                    incoming_thread = event['session_source'] == 'codex_thread'
+                    previous_thread = previous.get('session_source') == 'codex_thread'
+                    # Older pre-marker rows with a different ID from the incoming
+                    # stream fallback already have a source thread identity.
+                    previous_thread = previous_thread or (previous.get('session_source') is None
+                        and event['session_source'] == 'stream_fallback' and previous['session_id'] != event['session_id'])
+                    if previous_thread:
+                        if incoming_thread and event['session_id'] != previous['session_id']:
+                            raise ValueError('conflicting_thread_for_invocation')
+                        event.update(session_id=previous['session_id'], session_source='codex_thread')
+                    elif incoming_thread and previous['stage'] > event['stage']:
+                        # Late identity evidence enriches, without reverting final usage/status.
+                        event = {**sanitize(previous), 'session_id': event['session_id'], 'session_source': 'codex_thread'}
+                    if (previous.get('execution_status') in ('completed', 'failed')
+                            and event.get('execution_status') in ('started', 'unobserved')):
+                        event['execution_status'] = previous['execution_status']
+                        if event.get('error') == 'stream_ended_without_completion': event['error'] = previous.get('error')
                 if previous['stage'] > event['stage']: return False
                 # Late non-null usage enriches the same request; repeats never sum.
                 for key, value in event.items():
