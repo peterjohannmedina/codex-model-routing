@@ -15,7 +15,7 @@ MAX_LINE = 1024 * 1024
 class Collector:
     def __init__(self, ledger, stream_id, model=None, effort=None, settings_loader=None):
         self.ledger = ledger
-        self.session = state.identifier(stream_id)
+        self.session = state.identifier(stream_id, allow_unassigned=False)
         self.request = str(uuid.uuid5(uuid.NAMESPACE_URL, 'codex_exec:' + self.session))
         self.items = set()
         self.settings_loader = settings_loader
@@ -33,7 +33,7 @@ class Collector:
         if self.settings_loader: self.ledger.settings = self.settings_loader()
         kind = raw.get('type')
         if kind == 'thread.started':
-            incoming = state.identifier(raw.get('thread_id'))
+            incoming = state.identifier(raw.get('thread_id'), allow_unassigned=False)
             if self.thread is not None and incoming != self.thread: raise ValueError('one_invocation_per_stream')
             self.thread = self.session = incoming
             self.event['session_id'] = self.session

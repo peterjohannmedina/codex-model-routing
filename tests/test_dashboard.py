@@ -108,6 +108,12 @@ class LocalState(unittest.TestCase):
                     {'local_input_usd_per_million': float('nan')}):
             with self.assertRaises(ValueError): state.LedgerSettings.parse(bad)
 
+    def test_request_and_stream_ids_require_uuid_and_malformed_rows_fail_closed(self):
+        for malformed in (None, [], {'source':'router'}, event(request_id='unassigned')):
+            with self.assertRaises(ValueError): state.sanitize(malformed)
+        with self.assertRaises(ValueError): collect.Collector(self.ledger,'unassigned')
+        self.assertEqual(state.identifier('unassigned'),'unassigned')
+
     def test_config_cas_and_toggles_do_not_contact_providers(self):
         store = dashboard.Store(self.root)
         config, version = store.config()

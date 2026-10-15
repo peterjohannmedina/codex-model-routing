@@ -6,7 +6,7 @@ The dashboard is a separate review iteration, not an installed update.
 
 ## Evidence
 
-- 67 Python tests pass locally on Windows/Python 3.12, with one Unix-only and
+- 68 Python tests pass locally on Windows/Python 3.12, with one Unix-only and
   two explicitly disabled socket integration tests skipped. The routing,
   private-credential fixture, admission, install and provider matrix regressions
   remain included. All new test data/credentials are synthetic.

@@ -379,7 +379,7 @@ def main(argv=None):
             raw.setdefault('decisions', {})['max_cost_usd'] = args.max_decision_cost_usd
         config = Config.parse(raw)
         if not config.observability.enabled: ledger_status = 'disabled'
-        session_id, request_id = state.identifier(args.session_id), state.identifier(args.request_id)
+        session_id, request_id = state.identifier(args.session_id), state.identifier(args.request_id, allow_unassigned=False)
         packet = core.load_file(args.packet)
         overrides = core.Overrides.parse(core.load_file(args.overrides)) if args.overrides else core.Overrides()
         record = {'source': 'router', 'session_id': session_id, 'request_id': request_id,

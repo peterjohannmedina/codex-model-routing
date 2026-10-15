@@ -20,8 +20,9 @@ def label(value):
                      and not SECRET.search(value)) else None
 
 
-def identifier(value):
-    if value == 'unassigned': return value
+def identifier(value, allow_unassigned=True):
+    if allow_unassigned and value == 'unassigned': return value
+    if not isinstance(value, str) or len(value) > 64: raise ValueError('invalid_identifier')
     return str(uuid.UUID(value))
 
 
@@ -70,10 +71,11 @@ def state_root():
 
 def sanitize(raw):
     """No arbitrary text, endpoints, paths, payloads, headers, keys or hashes of prompts."""
+    if not isinstance(raw, dict): raise ValueError('invalid_event')
     source = raw.get('source')
     if source not in ('router', 'codex_exec'): raise ValueError('invalid_source')
-    result = {'source': source, 'session_id': identifier(raw['session_id']),
-              'request_id': identifier(raw['request_id']), 'stage': raw.get('stage', 2)}
+    result = {'source': source, 'session_id': identifier(raw.get('session_id')),
+              'request_id': identifier(raw.get('request_id'), allow_unassigned=False), 'stage': raw.get('stage', 2)}
     if type(result['stage']) is not int or result['stage'] not in (0, 1, 2): raise ValueError('invalid_stage')
     for key in ('model', 'effort', 'adapter', 'override_model', 'override_effort', 'fallback_reason',
                 'local_status', 'execution_status', 'model_source', 'mode', 'error', 'stream_status',
