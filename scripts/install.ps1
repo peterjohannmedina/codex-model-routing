@@ -82,7 +82,8 @@ function Copy-RoutingPackage {
     param([string]$From, [string]$To)
     foreach ($entry in Get-ChildItem -LiteralPath $From -Force) {
         if ($entry.Name -eq '.git' -or $entry.Name -eq '__pycache__' -or
-            $entry.Name -like '*.pyc' -or $entry.Name -like '*.dpapi' -or $entry.Name -like '.env*') { continue }
+            $entry.Name -like '*.pyc' -or $entry.Name -like '*.dpapi' -or $entry.Name -like '.env*' -or
+            $entry.Name -like 'usage.sqlite3*' -or $entry.Name -like '.dashboard-launch-*') { continue }
         if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Package links are not supported by this installer.' }
         if ($entry.PSIsContainer) {
             $childDestination = Join-Path $To $entry.Name

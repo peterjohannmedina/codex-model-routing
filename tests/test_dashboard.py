@@ -133,6 +133,16 @@ class LocalState(unittest.TestCase):
     def test_store_rejects_repository_state(self):
         with self.assertRaises(ValueError): dashboard.Store(ROOT / 'routing-test-state')
 
+    def test_browser_bootstrap_is_single_use_and_expires(self):
+        server = object.__new__(dashboard.Server)  # Authorization logic needs no socket.
+        server.bootstrap='synthetic-bootstrap'; server.bootstrap_lock=threading.Lock()
+        server.bootstrap_used=False; server.bootstrap_until=state.time.monotonic()+10; server.launch_path=None
+        self.assertFalse(server.authorize('wrong'))
+        self.assertTrue(server.authorize('synthetic-bootstrap'))
+        self.assertFalse(server.authorize('synthetic-bootstrap'))
+        server.bootstrap_used=False; server.bootstrap_until=0
+        self.assertFalse(server.authorize('synthetic-bootstrap'))
+
     def test_transport_usage_observations_without_text_persistence(self):
         wrapped, observed = runtime.transport_observer(lambda *_: b'{"usage":{"input_tokens":12,"output_tokens":0},"text":"ignored"}')
         wrapped(b'{}', 'offline-placeholder', 1)
@@ -196,10 +206,21 @@ class DashboardHTTP(unittest.TestCase):
         except PermissionError:
             if os.environ.get('ROUTING_REQUIRE_HTTP_TESTS') == '1': raise
             self.skipTest('Loopback connections denied; CI verifies real HTTP')
+        self.assertIsNone(response.getheader('Set-Cookie'))
+        self.assertIn(b'Routing desk', body)
+        self.assertNotIn(self.server.bootstrap.encode(),body)
+        self.assertEqual(self.request('GET','/api/session')[0].status,403)
+        launch = self.server.create_launch_file()
+        self.assertTrue(launch.is_file())
+        if os.name != 'nt': self.assertEqual(launch.stat().st_mode & 0o777, 0o600)
+        response, body = self.request('POST','/api/auth','{}',{'Origin':self.server.origin,
+            'Content-Type':'application/json','X-Routing-Bootstrap':self.server.bootstrap})
+        self.assertEqual(response.status,200)
+        self.assertFalse(launch.exists())
+        self.csrf = json.loads(body)['csrf']
         self.cookie = response.getheader('Set-Cookie').split(';')[0]
         self.assertIn('HttpOnly; SameSite=Strict', response.getheader('Set-Cookie'))
-        self.assertIn(b'Routing desk', body)
-        response, body = self.request('GET', '/api/session', headers={'Cookie':self.cookie})
+        response, body = self.request('GET', '/api/session', headers={'Cookie':self.cookie,'X-Routing-CSRF':self.csrf})
         self.csrf = json.loads(body)['csrf']
 
     def request(self, method, path, body=None, headers=None):
@@ -214,8 +235,15 @@ class DashboardHTTP(unittest.TestCase):
 
     def test_origin_host_session_csrf_and_size_guards(self):
         self.assertEqual(self.request('GET','/api/state')[0].status,403)
-        for headers in ({'Host':'evil.test'}, {'Origin':'https://evil.test'}, {'Sec-Fetch-Site':'cross-site'}):
+        self.assertEqual(self.request('GET','/api/session',headers={'Cookie':self.cookie})[0].status,403)
+        self.assertEqual(self.request('GET','/api/state',headers={'Cookie':self.cookie})[0].status,403)
+        for headers in ({'Host':'evil.test'}, {'Origin':'https://evil.test'}):
             self.assertEqual(self.request('GET','/',headers=headers)[0].status,403)
+        self.assertEqual(self.authenticated('GET','/api/state',**{'Sec-Fetch-Site':'cross-site'})[0].status,403)
+        # Static root navigation is public but grants no session/data access.
+        self.assertEqual(self.request('GET','/',headers={'Sec-Fetch-Site':'cross-site'})[0].status,200)
+        self.assertEqual(self.request('POST','/api/auth','{}',{'Origin':self.server.origin,
+            'Content-Type':'application/json','X-Routing-Bootstrap':self.server.bootstrap})[0].status,403)
         response, data = self.authenticated('GET','/api/state')
         self.assertEqual(response.status,200)
         payload={'config':json.loads(data)['config'], 'version':json.loads(data)['config_version']}

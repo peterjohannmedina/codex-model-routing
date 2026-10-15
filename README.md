@@ -71,14 +71,15 @@ evaluator/downstream usage, and labeled cost estimates. It refreshes every two
 seconds without provider health checks or toggle-triggered execution.
 
 ```powershell
-powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1
+powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1 -OpenBrowser
 ```
 
 ```sh
-sh scripts/invoke-routing.sh dashboard
+sh scripts/invoke-routing.sh dashboard --open-browser
 ```
 
-Open `http://127.0.0.1:8765` directly. Provider credentials are never read by the
+The launcher opens a private one-use authorization file, then the dashboard at
+`http://127.0.0.1:8765`. Provider credentials are never read by the
 dashboard. The instrumented runtime keeps a bounded local metadata ledger by
 default (7 days / 500 requests), with disable/clear controls and no external
 export. Existing older/private adapters, arbitrary already-open TUI sessions and

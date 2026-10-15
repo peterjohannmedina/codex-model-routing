@@ -11,6 +11,8 @@ from pathlib import Path
 import secrets
 import tempfile
 import threading
+import time
+import webbrowser
 from urllib.parse import urlsplit, parse_qs
 
 import routing_decision as core
@@ -89,10 +91,43 @@ class Server(ThreadingHTTPServer):
         self.store = store
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
+        self.bootstrap = secrets.token_urlsafe(32)
+        self.bootstrap_until = time.monotonic() + 300
+        self.bootstrap_used = False
+        self.bootstrap_lock = threading.Lock()
+        self.launch_path = None
         self.connections = threading.BoundedSemaphore(16)
         super().__init__(('127.0.0.1', port), Handler)
         self.origin = 'http://127.0.0.1:' + str(self.server_port)
         self.cookie_name = 'routing_' + str(self.server_port)
+
+    def create_launch_file(self):
+        self.store.root.mkdir(parents=True, exist_ok=True)
+        if os.name != 'nt': self.store.root.chmod(0o700)
+        descriptor, name = tempfile.mkstemp(prefix='.dashboard-launch-', suffix='.html', dir=self.store.root)
+        self.launch_path = Path(name)
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            stream.write('<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=' +
+                         self.origin + '/#' + self.bootstrap + '"><title>Opening local routing dashboard</title>Opening the local routing dashboard…')
+        return self.launch_path
+
+    def authorize(self, token):
+        with self.bootstrap_lock:
+            try:
+                if (self.bootstrap_used or time.monotonic() > self.bootstrap_until
+                        or not hmac.compare_digest(token, self.bootstrap)): return False
+            except TypeError: return False
+            self.bootstrap_used = True
+            if self.launch_path:
+                try: self.launch_path.unlink(missing_ok=True)
+                except OSError: pass
+            return True
+
+    def server_close(self):
+        if self.launch_path:
+            try: self.launch_path.unlink(missing_ok=True)
+            except OSError: pass
+        super().server_close()
 
     def process_request(self, request, address):
         if not self.connections.acquire(blocking=False):
@@ -132,10 +167,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def allowed(self, mutate=False, session=True):
+    def allowed(self, mutate=False, session=True, public=False):
         hosts = self.headers.get_all('Host', [])
         if hosts != [self.server.origin.removeprefix('http://')]: return False
-        if self.headers.get('Sec-Fetch-Site') not in (None, 'none', 'same-origin'): return False
+        if not public and self.headers.get('Sec-Fetch-Site') not in (None, 'none', 'same-origin'): return False
         origin = self.headers.get('Origin')
         if len(self.headers.get_all('Origin', [])) > 1: return False
         if origin is not None and origin != self.server.origin: return False
@@ -145,6 +180,12 @@ class Handler(BaseHTTPRequestHandler):
                 value = cookie.get(self.server.cookie_name)
                 if not value or not hmac.compare_digest(value.value, self.server.session): return False
             except (CookieError, TypeError): return False
+            # Cookies are host-scoped across ports. Require the browser-origin
+            # capability too, so a cookie exposed to another local port alone
+            # cannot read this dashboard or obtain its CSRF capability.
+            try:
+                if not hmac.compare_digest(self.headers.get('X-Routing-CSRF', ''), self.server.csrf): return False
+            except TypeError: return False
         if mutate:
             try:
                 if origin != self.server.origin or not hmac.compare_digest(self.headers.get('X-Routing-CSRF', ''), self.server.csrf): return False
@@ -153,12 +194,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         public = self.path in ('/', '/app.js', '/style.css')
-        if not self.allowed(session=not public): return self.reply(403, {'error': 'forbidden_origin_or_session'})
+        if not self.allowed(session=not public, public=public): return self.reply(403, {'error': 'forbidden_origin_or_session'})
         try:
             if public:
                 filename, kind = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                                   '/style.css': ('style.css', 'text/css; charset=utf-8')}[self.path]
-                return self.reply(200, (ASSETS / filename).read_bytes(), kind, cookie=self.path == '/')
+                return self.reply(200, (ASSETS / filename).read_bytes(), kind)
             if self.path == '/api/session': return self.reply(200, {'csrf': self.server.csrf})
             if urlsplit(self.path).path == '/api/state':
                 query = parse_qs(urlsplit(self.path).query, strict_parsing=True)
@@ -170,7 +211,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(503, {'error': 'configuration_or_ledger_unavailable'})
 
     def do_POST(self):
-        if not self.allowed(mutate=True): return self.reply(403, {'error': 'forbidden_origin_or_session'})
+        bootstrap = self.path == '/api/auth'
+        if bootstrap:
+            if not self.allowed(session=False) or self.headers.get('Origin') != self.server.origin:
+                return self.reply(403, {'error': 'forbidden_origin_or_session'})
+        elif not self.allowed(mutate=True): return self.reply(403, {'error': 'forbidden_origin_or_session'})
         if self.headers.get('Content-Type') != 'application/json' or self.headers.get('Transfer-Encoding'):
             return self.reply(415, {'error': 'json_required'})
         try:
@@ -178,6 +223,10 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers['Content-Length'])
             if not 1 <= length <= core.MAX_PACKET_BYTES: return self.reply(413, {'error': 'body_too_large'})
             raw = core.read_json(self.rfile.read(length).decode('utf-8'))
+            if bootstrap:
+                if raw != {} or not self.server.authorize(self.headers.get('X-Routing-Bootstrap', '')):
+                    return self.reply(403, {'error': 'local_browser_authorization_required'})
+                return self.reply(200, {'authorized': True, 'csrf': self.server.csrf}, cookie=True)
             if self.path == '/api/config':
                 core.object_fields(raw, {'config', 'version'}, {'config', 'version'})
                 self.server.store.save(raw['config'], raw['version'])
@@ -199,11 +248,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', type=Path, default=state.state_root())
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--open-browser', action='store_true', help='Open the private one-use launch file in your browser')
     args = parser.parse_args(argv)
     try:
         if not 0 <= args.port <= 65535: raise ValueError()
         server = Server(args.port, Store(args.state_dir))
-        print('Routing dashboard: ' + server.origin + ' (local browser; provider traffic stays in explicit routing commands)', flush=True)
+        launch = server.create_launch_file()
+        print('Routing dashboard: ' + server.origin + ' (local browser authorization required)', flush=True)
+        print('Open this private one-use launch file within 5 minutes: ' + str(launch), flush=True)
+        if args.open_browser:
+            try:
+                if not webbrowser.open(launch.as_uri()): print('Open the private launch file manually; no browser was available.', flush=True)
+            except (OSError, webbrowser.Error): print('Open the private launch file manually; automatic browser opening was unavailable.', flush=True)
         try: server.serve_forever(poll_interval=0.5)
         except KeyboardInterrupt: pass
         finally: server.server_close()

@@ -10,10 +10,11 @@ const text = (id, value) => { byId(id).textContent = value; };
 const money = value => value === null || value === undefined ? 'Unknown' : '$' + value.toFixed(6);
 const number = value => value === null || value === undefined ? 'Unknown' : value.toLocaleString();
 const time = value => value ? new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Unobserved';
-async function api(path, body) {
+async function api(path, body, bootstrap) {
   const controller = new AbortController(), timeout = setTimeout(()=>controller.abort(),5000);
-  const options = {credentials:'same-origin', cache:'no-store',signal:controller.signal};
+  const options = {credentials:'same-origin', cache:'no-store',signal:controller.signal,headers:{'X-Routing-CSRF':csrf}};
   if (body !== undefined) Object.assign(options, {method:'POST',headers:{'Content-Type':'application/json','X-Routing-CSRF':csrf},body:JSON.stringify(body)});
+  if (bootstrap) options.headers['X-Routing-Bootstrap']=bootstrap;
   try {
     const response = await fetch(path, options);
     const value = await response.json();
@@ -122,4 +123,10 @@ byId('config-form').addEventListener('submit',async event=>{
 byId('reload').addEventListener('click',()=>{dirty=false;refresh();});
 byId('session').addEventListener('change',refresh);
 byId('clear').addEventListener('click',async()=>{if(!confirm('Delete retained local usage metadata? This does not change provider settings or erase filesystem backups.'))return;try{await api('/api/ledger/clear',{confirm:true});await refresh();}catch(error){text('message','Could not clear history: '+error.message);}});
-(async()=>{try{csrf=(await api('/api/session')).csrf;await refresh();}catch(error){text('message','Open the dashboard root URL again to establish a local browser session.');}setInterval(()=>{if(!document.hidden)refresh();},2000);})();
+(async()=>{try{
+  const bootstrap=location.hash.slice(1);
+  if(bootstrap){try{const authorization=await api('/api/auth',{},bootstrap);sessionStorage.setItem('routing-csrf',authorization.csrf);}finally{history.replaceState(null,'',location.pathname);}}
+  csrf=sessionStorage.getItem('routing-csrf') || '';
+  csrf=(await api('/api/session')).csrf;await refresh();
+}catch(error){text('message','Open the private one-use launch file from the server terminal to authorize this browser. Restart the server if the file expired.');}
+setInterval(()=>{if(!document.hidden)refresh();},2000);})();

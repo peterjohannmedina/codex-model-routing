@@ -22,7 +22,9 @@ let data={config,config_version:'v1',sessions:[session],selected_session:null,ob
 const calls=[];let interval, failNext=false, confirmed=false;
 const fetch=async(url,options)=>{
   calls.push({url,options});
-  assert.match(url,/^\/api\/(session|state(?:\?session=[a-z0-9-]+)?|config|ledger\/clear)$/);
+  assert.match(url,/^\/api\/(auth|session|state(?:\?session=[a-z0-9-]+)?|config|ledger\/clear)$/);
+  if(url==='/api/auth') {assert.equal(options.headers['X-Routing-Bootstrap'],'synthetic-bootstrap');return {ok:true,json:async()=>({authorized:true,csrf:'synthetic-csrf'})};}
+  assert.equal(options.headers['X-Routing-CSRF'],'synthetic-csrf');
   if(url==='/api/session') return {ok:true,json:async()=>({csrf:'synthetic-csrf'})};
   if(url.startsWith('/api/state')) {if(failNext){failNext=false;throw new Error('synthetic_disconnect');}return {ok:true,json:async()=>structuredClone(data)};}
   assert.equal(options.headers['X-Routing-CSRF'],'synthetic-csrf');
@@ -30,11 +32,14 @@ const fetch=async(url,options)=>{
   if(url==='/api/ledger/clear') {assert.deepEqual(JSON.parse(options.body),{confirm:true});data.events=[];data.totals.requests=0;}
   return {ok:true,json:async()=>({saved:true})};
 };
-const context=vm.createContext({document:{hidden:false,getElementById:id=>{assert.ok(nodes[id],'unknown HTML id '+id);return nodes[id];},createElement:tag=>new Element(tag),createElementNS:(_ns,tag)=>new Element(tag)},fetch,setTimeout,clearTimeout,AbortController,structuredClone,setInterval:fn=>{interval=fn;},confirm:()=>confirmed});
+let fragmentRemoved=false;
+const storage=new Map();
+const context=vm.createContext({sessionStorage:{setItem:(k,v)=>storage.set(k,v),getItem:k=>storage.get(k)||null},location:{hash:'#synthetic-bootstrap',pathname:'/'},history:{replaceState:(_a,_b,path)=>{assert.equal(path,'/');fragmentRemoved=true;}},document:{hidden:false,getElementById:id=>{assert.ok(nodes[id],'unknown HTML id '+id);return nodes[id];},createElement:tag=>new Element(tag),createElementNS:(_ns,tag)=>new Element(tag)},fetch,setTimeout,clearTimeout,AbortController,structuredClone,setInterval:fn=>{interval=fn;},confirm:()=>confirmed});
 vm.runInContext(fs.readFileSync(path.join(root,'assets/dashboard/app.js'),'utf8'),context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
   await flush();await flush();
+  assert.ok(fragmentRemoved,'bootstrap token remained in browser history');
   assert.equal(nodes.requests.textContent,'3');assert.equal(nodes.executions.textContent,'1');
   assert.equal(nodes['local-cost'].textContent,'Unknown');assert.match(nodes['downstream-unknown'].textContent,/1 requests with unknown/);
   assert.equal(nodes.events.children[0].children[0].children[3].textContent,'Recommendation');

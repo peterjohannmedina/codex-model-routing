@@ -23,7 +23,7 @@ The dashboard is separate from any infrastructure dashboard or hosted service.
 | Correlation and dedup | Router request UUID shared across Windows preflight/child. Explicit session UUID groups commands. Collector stream UUID identifies one exec invocation; canonical request upsert supports replay and late usage without summing twice. |
 | Privacy | Allowlisted scalar metadata only; no prompts, outputs, commands, headers, endpoints, key values or prompt hashes in ledger. Read path reapplies allowlist. Dashboard never reads credentials or internal session stores. |
 | Retention | Local SQLite, default 7 days / 500 requests, configurable 1–30 days / 10–5000 requests; prune on writes/reads; disable and explicit clear. Local filesystem backups are outside deletion guarantees. |
-| Browser boundary | Bind 127.0.0.1, exact Host/Origin, cross-site rejection, random per-process HttpOnly SameSite cookie plus CSRF header for mutations, no CORS, restrictive CSP, no external assets, size/time/concurrency bounds. |
+| Browser boundary | Bind 127.0.0.1, private single-use bootstrap file with five-minute expiry, exact Host/Origin and cross-site API rejection, random per-process HttpOnly SameSite cookie plus CSRF header for mutations, no CORS, restrictive CSP, no external assets, size/time/concurrency bounds. |
 | Portable package | Python 3.11 standard library, PowerShell/Unix startup paths, no server/runtime provisioning, clean-install completeness checks and offline default. |
 
 ## Supported sources and exclusions

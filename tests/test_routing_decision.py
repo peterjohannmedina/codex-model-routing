@@ -422,6 +422,7 @@ class PackageTests(unittest.TestCase):
             source = user / 'source'
             shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns('.git', '__pycache__'))
             (source / '.env').write_text('synthetic excluded fixture')
+            (source / '.dashboard-launch-synthetic.html').write_text('synthetic private bootstrap fixture')
             (source / 'scripts' / 'synthetic.dpapi').write_text('synthetic excluded fixture')
             (user / '.codex').mkdir()
             legacy = user / 'AGENTS.md'
@@ -442,6 +443,7 @@ class PackageTests(unittest.TestCase):
             self.assertFalse((user / '.codex' / 'config.toml').exists())
             skill = user / '.codex' / 'skills' / 'codex-model-routing'
             self.assertFalse((skill / '.env').exists())
+            self.assertFalse((skill / '.dashboard-launch-synthetic.html').exists())
             self.assertFalse((skill / 'scripts' / 'synthetic.dpapi').exists())
             for name in ('Invoke-Routing.ps1', 'routing_runtime.py', 'routing_decision.py',
                          'Set-RoutingApiKey.ps1', 'invoke-routing.sh', 'routing_state.py',

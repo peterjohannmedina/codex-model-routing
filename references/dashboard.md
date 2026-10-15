@@ -11,16 +11,25 @@ or spending permission.
 From a reviewed source checkout or installed skill directory:
 
 ```powershell
-powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1
+powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1 -OpenBrowser
 ```
 
 ```sh
-sh scripts/invoke-routing.sh dashboard
+sh scripts/invoke-routing.sh dashboard --open-browser
 # Equivalent: python3 -B scripts/routing_dashboard.py
 ```
 
-Open `http://127.0.0.1:8765` directly in a local browser. Use the same process for
-all sessions. A second server on that port fails instead of choosing another
+The optional browser flag opens a private one-use launch file that redirects to
+`http://127.0.0.1:8765` and authorizes that browser. Without the flag, open the
+private file path printed in the terminal within five minutes. No token value
+is printed. Root HTML is public but grants no session or data access on its own.
+The file is deleted after successful authorization or normal server shutdown;
+its nonce expires and is single-use. Restart if it expires or another browser
+needs authorization. The browser removes the temporary fragment from history.
+Use the same server process for all instrumented sessions and reuse the authorized
+tab. Reloading preserves its tab-scoped session capability; a fresh browser/tab
+needs bootstrap authorization. Restarting the view does not stop disk collectors.
+A second server on that port fails instead of choosing another
 dashboard automatically. Stop with Ctrl+C. No autostart service is installed.
 `--port` / `-Port` and `--state-dir` / `-StateDir` are explicit overrides.
 The server always binds 127.0.0.1; there is no LAN host option or remote exposure.
@@ -36,6 +45,7 @@ Defaults are `$CODEX_HOME/routing/` or `~/.codex/routing/`:
 
 - `config.json`: nonsecret provider settings plus `observability` settings.
 - `usage.sqlite3`: bounded metadata for instrumented requests.
+- `.dashboard-launch-*.html`: ephemeral browser-bootstrap file, never a provider key.
 
 The dashboard refuses state directories inside a Git repository. Installation
 copies the dashboard and config example but starts no server and creates no
@@ -67,7 +77,8 @@ python3 -B scripts/routing_runtime.py assets/routing-packet.example.json --offli
 
 The PowerShell launcher accepts `-SessionId`, `-RequestId`, and `-NoLedger`.
 Each invocation generates a request UUID unless supplied; Windows preflight and
-child share it. Set the documented `CODEX_ROUTING_SESSION_ID` in a terminal to a
+child share it. Reuse a request UUID only for stages/replay of the same invocation.
+Set the documented `CODEX_ROUTING_SESSION_ID` in a terminal to a
 UUID to group that terminal's explicit router commands. Without a session UUID,
 commands appear under **Unassigned router commands**. Session IDs are labels for
 correlation, not credentials, auto-discovery or proof of an attached CLI.
@@ -175,13 +186,19 @@ Default retention is 7 days / 500 requests; controls allow 1–30 days / 10–50
 Pruning runs on reads and writes. Clear deletes retained rows and vacuums SQLite
 with secure-delete enabled. This does not promise erasure from filesystem
 snapshots, backups or forensic storage. Unix state is owner-only; Windows uses
-the current user's inherited directory ACL. This is a local-user boundary,
-not protection against other processes already running as that user.
+the current user's inherited directory ACL. Use a private per-user state
+directory; a custom shared directory weakens bootstrap-file privacy. This is a
+local-user boundary, not protection against processes already running as that user.
 
-Exact Host/Origin checks reject DNS rebinding and cross-site mutations. A random
-per-process HttpOnly SameSite browser cookie plus a CSRF header gates writes.
-Tokens stay in process/browser memory, never query strings or access logs; they
-are not provider credentials. There is no CORS allowance. CSP blocks external
+Exact Host/Origin checks reject DNS rebinding and cross-site mutations. A private
+five-minute, single-use bootstrap file authorizes the browser; opening public root
+HTML alone yields no cookie. A random per-process HttpOnly SameSite browser cookie
+and a tab-scoped capability in sessionStorage gate all API reads and writes.
+Cookie possession alone cannot retrieve that capability, including from another
+localhost port. The bootstrap travels in a URL
+fragment, not an HTTP query or access log; the browser removes it immediately.
+Other control tokens remain in process/browser session state. These are not provider
+credentials. There is no CORS allowance. CSP blocks external
 assets/frames and unsafe script; request bytes, read time and concurrency are
 bounded. No state file or credential path is served. Do not expose this server
 through a reverse proxy or public tunnel.

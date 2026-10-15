@@ -111,7 +111,7 @@ mkdir -p "$skill_destination" "$agent_destination" "$prompt_destination"
 
 # rsync ships with macOS and preserves the package layout while excluding Git
 # metadata, matching the PowerShell installer's behavior.
-rsync -a --exclude=.git --exclude=__pycache__ --exclude='*.pyc' --exclude='*.dpapi' --exclude='.env*' "$source_root/" "$skill_destination/"
+rsync -a --exclude=.git --exclude=__pycache__ --exclude='*.pyc' --exclude='*.dpapi' --exclude='.env*' --exclude='usage.sqlite3*' --exclude='.dashboard-launch-*' "$source_root/" "$skill_destination/"
 for profile in luna-efficient sol-general terra-general sol-expert astra-integrator; do
     cp "$source_root/assets/agents/$profile.toml" "$agent_destination/"
 done
