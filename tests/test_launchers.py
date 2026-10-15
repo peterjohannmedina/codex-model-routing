@@ -46,6 +46,34 @@ class WindowsLauncher(unittest.TestCase):
         result = self.launch('-Provider', 'decisions', '-AllowApi', '-OverridesPath', str(overrides))
         self.assertEqual(result['provenance']['resolution'], 'single_admissible_route')
 
+    def test_preflight_preserves_configured_local_auth_without_inference(self):
+        packet = json.loads(self.packet.read_text())
+        packet['local_work_eligible'] = True
+        packet['candidates'].append({'id': 'custom_local', 'action': 'delegate', 'adapter': 'local',
+                                     'model': 'example-model', 'effort': 'default'})
+        self.packet = self.fixture / 'local-packet.json'
+        self.packet.write_text(json.dumps(packet))
+        self.config.write_text(json.dumps({'schema_version': 1, 'decisions': {'enabled': True},
+            'local': {'enabled': True, 'base_url': 'http://127.0.0.1:8000/v1', 'model': 'example-model',
+                      'api_key_env': 'OPENAI_API_KEY', 'prefer_when_eligible': True}}))
+        fake = self.fixture / 'fake-preflight.py'
+        fake.write_text('import sys\nsys.path.insert(0,' + repr(str(ROOT / 'scripts')) + ')\n'
+            'import routing_runtime as runtime\n'
+            'def readiness(config, environment, *args, **kwargs):\n'
+            '    if environment.get(config.api_key_env) != "offline-placeholder":\n'
+            '        raise runtime.core.ProviderFailure("missing_key")\n'
+            '    if kwargs.get("method", "GET") != "GET": raise AssertionError("inference forbidden")\n'
+            '    return {"data":[{"id":"example-model"}]}\n'
+            'runtime.local_request = readiness\n'
+            'raise SystemExit(runtime.main(sys.argv[1:]))\n')
+        result = self.launch('-PreflightOnly', '-ExecuteLocal', '-AllowLocalInference', '-AllowApi',
+                             '-PreflightScriptPath', str(fake),
+                             env=dict(os.environ, OPENAI_API_KEY='offline-placeholder'))
+        self.assertEqual(result['preflight']['local_status'], 'ready')
+        self.assertEqual(result['safe_result']['recommendation']['adapter'], 'local')
+        self.assertEqual(result['preflight']['decisions_api_calls'], 0)
+        self.assertFalse(result['preflight']['decisions_credential_accessed'])
+
     def test_synthetic_loader_targets_child_only(self):
         make = self.fixture / 'make.ps1'
         make.write_text('param([string]$Path)\n$ErrorActionPreference="Stop"\n'

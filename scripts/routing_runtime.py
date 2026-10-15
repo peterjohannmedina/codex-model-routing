@@ -314,7 +314,12 @@ def main(argv=None):
         config = Config.parse(raw)
         packet = core.load_file(args.packet)
         overrides = core.Overrides.parse(core.load_file(args.overrides)) if args.overrides else core.Overrides()
-        if args.execute_local:
+        # Preflight is advisory even when execution/consent switches are also
+        # present. Match the PowerShell launcher: never infer during preflight.
+        if args.preflight_only:
+            result = route(packet, config, overrides, allow_api=args.allow_api,
+                           preflight_only=True, offline=args.offline)
+        elif args.execute_local:
             if args.offline:
                 raise core.RoutingError('local_execution_in_offline_mode')
             result = execute_local(packet, config, overrides, allow_local_inference=args.allow_local_inference)

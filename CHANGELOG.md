@@ -2,6 +2,10 @@
 
 ## Unreleased — 2026-10-15
 
+- Make preflight dominate local-execution and consent flags on every platform.
+  Preserve configured local readiness authentication in Windows preflight without
+  loading DPAPI or invoking Decisions; add fake-transport and child-env regressions.
+
 - Add a portable configured runtime, PowerShell/Unix launchers, external config
   sample and optional human-only Windows credential entry helper. Both extra
   providers default off; native routing needs neither credentials nor a local LLM.

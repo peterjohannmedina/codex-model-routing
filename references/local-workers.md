@@ -96,9 +96,13 @@ bundled Codex Python, or an installed Python 3.11+ interpreter, and skips Window
 Store aliases. The Unix launcher uses `CODEX_ROUTING_PYTHON` or python3/python.
 Neither installs a runtime or changes execution policy. The Python entrypoint is
 `scripts/routing_runtime.py`. `--offline` forbids provider requests and inference;
-`--preflight-only` performs admission and configured local advertisement checks,
-but never loads a Decisions credential or calls Decisions. It may use the local
-server's configured authentication environment variable for that read-only probe.
+`--preflight-only` performs admission and configured local advertisement checks.
+It takes precedence over execution and authorization flags on every platform:
+no inference POST, Decisions request or DPAPI load occurs. It may use the local
+server's configured authentication environment variable for that read-only probe,
+including `OPENAI_API_KEY` when explicitly selected as local authentication.
+The environment key is not read for Decisions during preflight. Adding `--offline`
+also disables the advertisement check, so preflight uses no transport at all.
 
 Recommendations do not execute work. Explicit local execution is separate:
 

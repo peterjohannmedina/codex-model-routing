@@ -105,7 +105,11 @@ if ($null -ne $MaxDecisionInputTokens) { $routingPreflightArguments += @('--max-
 if ($null -ne $MaxDecisionCostUsd) { $routingPreflightArguments += @('--max-decision-cost-usd', $MaxDecisionCostUsd.ToString([Globalization.CultureInfo]::InvariantCulture)) }
 if ($null -ne $MaxDecisionInputTokens) { $routingArguments += @('--max-decision-input-tokens', [string]$MaxDecisionInputTokens) }
 if ($null -ne $MaxDecisionCostUsd) { $routingArguments += @('--max-decision-cost-usd', $MaxDecisionCostUsd.ToString([Globalization.CultureInfo]::InvariantCulture)) }
-$routingPreflight = (Invoke-RoutingPython -RoutingArguments $routingPreflightArguments -RoutingKey $null) | ConvertFrom-Json
+# Preflight never loads DPAPI or calls Decisions. It may authenticate the
+# explicitly configured local readiness GET, including with OPENAI_API_KEY.
+# Preserve ambient credentials for that configured use; Python enforces the
+# provider boundary rather than treating one environment-variable name as global.
+$routingPreflight = (Invoke-RoutingPython -RoutingArguments $routingPreflightArguments -RoutingKey $null -PermitEnvironmentKey) | ConvertFrom-Json
 if ($PreflightOnly) { $routingPreflight | ConvertTo-Json -Depth 12 -Compress; return }
 if ($ExecuteLocal) {
     $routingArguments += '--execute-local'

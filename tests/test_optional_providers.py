@@ -1,6 +1,8 @@
 import copy
 import itertools
-from dataclasses import replace
+from dataclasses import asdict, replace
+from contextlib import redirect_stdout
+import io
 import json
 from pathlib import Path
 import sys
@@ -241,6 +243,33 @@ class OptionalProviders(unittest.TestCase):
         self.assertEqual(calls, ['GET'])
         self.assertEqual(result['execution']['reason'], 'deadline_exhausted')
         self.assertFalse(result['execution']['native_execution_started'])
+
+    def test_cli_preflight_dominates_execution_and_consent(self):
+        raw = {'schema_version': 1, **asdict(configuration(True, True))}
+        for offline in (False, True):
+            with self.subTest(offline=offline):
+                methods = []
+                def readiness_only(_config, _environment, _transport, method='GET', body=None):
+                    methods.append(method)
+                    self.assertEqual(method, 'GET', 'preflight attempted inference')
+                    self.assertIsNone(body)
+                    return {'data': [{'id': 'example-model'}]}
+                output = io.StringIO()
+                argv = ['packet.json', '--config', 'config.json', '--preflight-only',
+                        '--execute-local', '--allow-local-inference', '--allow-api']
+                if offline: argv.append('--offline')
+                with (patch.object(Path, 'is_file', return_value=True),
+                      patch.object(core, 'load_file', side_effect=[raw, local_packet()]),
+                      patch.object(runtime, 'local_request', side_effect=readiness_only),
+                      patch.object(runtime, 'execute_local', side_effect=AssertionError('preflight executed work')),
+                      patch.object(core.DecisionsProvider, 'choose', side_effect=AssertionError('preflight called Decisions')),
+                      patch.object(core, 'bounded_call', side_effect=AssertionError('unmocked transport')),
+                      redirect_stdout(output)):
+                    self.assertEqual(runtime.main(argv), 0)
+                result = json.loads(output.getvalue())
+                self.assertIn('preflight', result)
+                self.assertEqual(result['preflight']['decisions_api_calls'], 0)
+                self.assertEqual(methods, [] if offline else ['GET'])
 
 
 if __name__ == '__main__':

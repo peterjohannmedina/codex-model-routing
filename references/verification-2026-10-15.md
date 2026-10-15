@@ -26,9 +26,14 @@ fallback remain sufficient for this release.
   unrelated global instructions and existing named local profiles, installs all
   launchers, and excludes synthetic `.env`/DPAPI fixtures. The installed launcher
   runs without provider configuration. Unix has the equivalent CI fixture.
-- The 51-test suite passes on this Windows/Python 3.12 host with the one Unix
+- The 53-test suite passes on this Windows/Python 3.12 host with the one Unix
   test skipped. Windows DPAPI tests use a synthetic value and a fake child that
   checks a boolean; they never use a real credential or network transport.
+- PR review found and fixed CLI flag precedence: preflight now wins over
+  execution plus inference/API consent. Offline combined-flag preflight uses no
+  transport; non-offline preflight allows only mocked readiness GET in regression
+  tests. A synthetic Windows child proves that explicitly configured local
+  `OPENAI_API_KEY` authentication survives preflight, with no DPAPI load or inference.
 - Git Bash syntax checks pass for both shell scripts; `git diff --check` passes.
   Read the new PR checks for the final exact-head Windows/Ubuntu x Python
   3.11/3.12 matrix result. No packages or runtimes were installed here.
