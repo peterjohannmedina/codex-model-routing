@@ -77,13 +77,37 @@ function Invoke-RoutingPython {
         }
         $routingOutput = $routingOutputTask.GetAwaiter().GetResult()
         [void]$routingErrorTask.GetAwaiter().GetResult()
-        if ($routingProcess.ExitCode -ne 0) { throw "Local routing configuration failed (exit $($routingProcess.ExitCode))." }
-        return $routingOutput
+        return [pscustomobject]@{ Output = $routingOutput; ExitCode = $routingProcess.ExitCode }
     } finally {
         $routingStart.EnvironmentVariables.Remove('OPENAI_API_KEY')
         if ($null -ne $RoutingKey) { $routingStart.EnvironmentVariables.Remove($KeyEnvironment) }
         $routingProcess.Dispose()
     }
+}
+
+function Write-RoutingChildResult {
+    param($RoutingResult)
+    if ($RoutingResult.ExitCode -ne 0) {
+        # Admission can change after preflight. Preserve its failure instead of
+        # returning a stale candidate. Never print arbitrary failed-child output.
+        $routingFailure = @{ error = 'routing_child_failed'; recommendation = $null }
+        try {
+            $routingChildFailure = $RoutingResult.Output | ConvertFrom-Json
+            if ($routingChildFailure.error -in @('invalid_or_unsatisfied_routing_configuration', 'required_route_failed')) {
+                $routingFailure.error = $routingChildFailure.error
+                if ($routingChildFailure.error -eq 'invalid_or_unsatisfied_routing_configuration') {
+                    $routingFailure.execution_started = $false
+                } else {
+                    $routingFailure.execution = @{ status = 'failed'; native_execution_started = $false }
+                }
+                $routingReason = if ($routingChildFailure.reason) { $routingChildFailure.reason } else { $routingChildFailure.execution.reason }
+                if ($routingReason -cmatch '^[a-z0-9_]{1,80}$') { $routingFailure.reason = $routingReason }
+            }
+        } catch { }
+        $routingFailure | ConvertTo-Json -Compress
+        exit 2
+    }
+    $RoutingResult.Output
 }
 
 foreach ($routingRequired in @($PythonPath, $PreflightScriptPath, $RoutingScriptPath, $PacketPath)) {
@@ -109,12 +133,15 @@ if ($null -ne $MaxDecisionCostUsd) { $routingArguments += @('--max-decision-cost
 # explicitly configured local readiness GET, including with OPENAI_API_KEY.
 # Preserve ambient credentials for that configured use; Python enforces the
 # provider boundary rather than treating one environment-variable name as global.
-$routingPreflight = (Invoke-RoutingPython -RoutingArguments $routingPreflightArguments -RoutingKey $null -PermitEnvironmentKey) | ConvertFrom-Json
+$routingPreflightResult = Invoke-RoutingPython -RoutingArguments $routingPreflightArguments -RoutingKey $null -PermitEnvironmentKey
+if ($routingPreflightResult.ExitCode -ne 0) { Write-RoutingChildResult $routingPreflightResult; return }
+$routingPreflight = $routingPreflightResult.Output | ConvertFrom-Json
 if ($PreflightOnly) { $routingPreflight | ConvertTo-Json -Depth 12 -Compress; return }
 if ($ExecuteLocal) {
     $routingArguments += '--execute-local'
     if ($AllowLocalInference) { $routingArguments += '--allow-local-inference' }
-    Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $null -PermitEnvironmentKey
+    $routingResult = Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $null -PermitEnvironmentKey
+    Write-RoutingChildResult $routingResult
     return
 }
 if (-not $routingPreflight.preflight.may_load_credential) {
@@ -125,24 +152,33 @@ if (-not $routingPreflight.preflight.may_load_credential) {
 # Reached only after admission, hard ceilings and explicit consent. Never invoke
 # this branch without authority for spending and credential-loader use.
 if (-not (Test-Path -LiteralPath $CredentialPath -PathType Leaf)) {
-    try {
-        Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $null -PermitEnvironmentKey
-    } catch {
-        $routingPreflight.safe_result.provenance.fallback_reason = 'local_execution_error'
-        $routingPreflight.safe_result | ConvertTo-Json -Depth 12 -Compress
-    }
+    $routingResult = Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $null -PermitEnvironmentKey
+    Write-RoutingChildResult $routingResult
     return
 }
 $routingSecureKey = $null
 try {
-    if (-not (Get-Module -Name Microsoft.PowerShell.Security)) {
-        Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+    $routingCredentialFailed = $false
+    try {
+        if (-not (Get-Module -Name Microsoft.PowerShell.Security)) {
+            Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
+        }
+        $routingSecureKey = ConvertTo-SecureString -String ((Get-Content -LiteralPath $CredentialPath -Raw).Trim())
+    } catch {
+        $routingCredentialFailed = $true
     }
-    $routingSecureKey = ConvertTo-SecureString -String ((Get-Content -LiteralPath $CredentialPath -Raw).Trim())
-    Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $routingSecureKey -KeyEnvironment $routingPreflight.preflight.api_key_env -PermitEnvironmentKey
-} catch {
-    $routingPreflight.safe_result.provenance.fallback_reason = 'local_credential_or_execution_error'
-    $routingPreflight.safe_result | ConvertTo-Json -Depth 12 -Compress
+    if ($routingCredentialFailed) {
+        # Revalidate current admission with rules, without attempting Decisions.
+        # A required route that disappeared must still fail with exit 2.
+        $routingResult = Invoke-RoutingPython -RoutingArguments ($routingArguments + @('--provider', 'rules')) -RoutingKey $null -PermitEnvironmentKey
+        if ($routingResult.ExitCode -ne 0) { Write-RoutingChildResult $routingResult; return }
+        $routingFallback = $routingResult.Output | ConvertFrom-Json
+        $routingFallback.provenance.fallback_reason = 'local_credential_error'
+        $routingFallback | ConvertTo-Json -Depth 12 -Compress
+    } else {
+        $routingResult = Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $routingSecureKey -KeyEnvironment $routingPreflight.preflight.api_key_env -PermitEnvironmentKey
+        Write-RoutingChildResult $routingResult
+    }
 } finally {
     if ($null -ne $routingSecureKey) { $routingSecureKey.Dispose() }
 }

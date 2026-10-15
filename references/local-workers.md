@@ -144,6 +144,13 @@ it rejects storage inside repositories. Installation does not run it. Unix users
 use their existing secure environment/credential mechanism. No credentials were
 created or real credentials accessed during release testing.
 
+The Windows launcher preserves a child's structured admission failure and exits
+with status 2. It never replaces that failure with the earlier preflight result.
+If DPAPI decryption fails, it rechecks current admission through the rules
+provider without attempting Decisions. A required route that disappeared still
+fails; an optional route may yield a current native recommendation. Failed-child
+stdout/stderr is not echoed as arbitrary diagnostic text.
+
 Admission, exact single-candidate resolution and hard evaluator cap checks occur
 before the Windows DPAPI loader. There is no verified complete Decisions token
 counter. `max_input_tokens` / `-MaxDecisionInputTokens` and `max_cost_usd` /

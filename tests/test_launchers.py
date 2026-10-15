@@ -24,11 +24,14 @@ class WindowsLauncher(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def launch(self, *args, env=None):
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-File',
+    def run_launch(self, *args, env=None):
+        return subprocess.run(['powershell.exe', '-NoProfile', '-File',
             str(ROOT / 'scripts' / 'Invoke-Routing.ps1'), '-PacketPath', str(self.packet),
             '-ConfigPath', str(self.config), '-PythonPath', sys.executable,
             '-CredentialPath', str(self.credential), *args], capture_output=True, text=True, timeout=20, env=env)
+
+    def launch(self, *args, env=None):
+        result = self.run_launch(*args, env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
@@ -74,7 +77,7 @@ class WindowsLauncher(unittest.TestCase):
         self.assertEqual(result['preflight']['decisions_api_calls'], 0)
         self.assertFalse(result['preflight']['decisions_credential_accessed'])
 
-    def test_synthetic_loader_targets_child_only(self):
+    def make_synthetic_credential(self):
         make = self.fixture / 'make.ps1'
         make.write_text('param([string]$Path)\n$ErrorActionPreference="Stop"\n'
             'Import-Module (Join-Path $PSHOME "Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1")\n'
@@ -83,10 +86,51 @@ class WindowsLauncher(unittest.TestCase):
         made = subprocess.run(['powershell.exe', '-NoProfile', '-File', str(make), '-Path', str(self.credential)],
                                capture_output=True, text=True, timeout=10)
         self.assertEqual(made.returncode, 0, made.stderr)
+
+    def test_synthetic_loader_targets_child_only(self):
+        self.make_synthetic_credential()
         fake = self.fixture / 'fake.py'
         fake.write_text('import os,json\nprint(json.dumps({"dummy_matches":os.environ.get("OPENAI_API_KEY")=="offline-placeholder"}))')
         result = self.launch('-Provider', 'decisions', '-AllowApi', '-RoutingScriptPath', str(fake))
         self.assertTrue(result['dummy_matches'])
+
+    def test_readiness_loss_preserves_required_route_failure(self):
+        packet = json.loads(self.packet.read_text())
+        packet.update(local_work_eligible=True, require_local=True)
+        for effort in ('default', 'low'):
+            packet['candidates'].append({'id': 'custom_' + effort, 'action': 'delegate', 'adapter': 'local',
+                                         'model': 'example-model', 'effort': effort})
+        self.packet = self.fixture / 'required-local.json'
+        self.packet.write_text(json.dumps(packet))
+        self.config.write_text(json.dumps({'schema_version': 1, 'decisions': {'enabled': True},
+            'local': {'enabled': True, 'base_url': 'http://127.0.0.1:8000/v1', 'model': 'example-model',
+                      'efforts': ['default', 'low']}}))
+        prefix = ('import sys\nsys.path.insert(0,' + repr(str(ROOT / 'scripts')) + ')\n'
+                  'import routing_runtime as runtime\n'
+                  'def forbidden(*args, **kwargs): raise AssertionError("transport forbidden")\n'
+                  'runtime.core.bounded_call = forbidden\n')
+        preflight = self.fixture / 'ready.py'
+        preflight.write_text(prefix +
+            'runtime.local_request = lambda *args, **kwargs: {"data":[{"id":"example-model"}]}\n'
+            'raise SystemExit(runtime.main(sys.argv[1:]))\n')
+        actual = self.fixture / 'unavailable.py'
+        actual.write_text(prefix +
+            'def unavailable(*args, **kwargs): raise runtime.core.ProviderFailure("network")\n'
+            'runtime.local_request = unavailable\n'
+            'raise SystemExit(runtime.main(sys.argv[1:]))\n')
+        for credential in ('absent', 'synthetic', 'invalid'):
+            with self.subTest(credential=credential):
+                if credential == 'absent': self.credential.unlink(missing_ok=True)
+                elif credential == 'synthetic': self.make_synthetic_credential()
+                else: self.credential.write_text('not-a-real-cipher')
+                result = self.run_launch('-AllowApi', '-PreflightScriptPath', str(preflight),
+                                         '-RoutingScriptPath', str(actual))
+                self.assertEqual(result.returncode, 2, result.stderr)
+                failure = json.loads(result.stdout)
+                self.assertEqual(failure['error'], 'invalid_or_unsatisfied_routing_configuration')
+                self.assertEqual(failure['reason'], 'require_local_unavailable')
+                self.assertIsNone(failure['recommendation'])
+                self.assertFalse(failure['execution_started'])
 
 
 @unittest.skipUnless(sys.platform != 'win32' and shutil.which('sh') and shutil.which('rsync'), 'Unix clean install')

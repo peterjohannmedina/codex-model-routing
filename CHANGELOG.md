@@ -5,6 +5,9 @@
 - Make preflight dominate local-execution and consent flags on every platform.
   Preserve configured local readiness authentication in Windows preflight without
   loading DPAPI or invoking Decisions; add fake-transport and child-env regressions.
+- Preserve Windows child admission failures and nonzero exit status instead of
+  returning stale preflight success. Revalidate rules admission on credential
+  errors and cover required-local readiness loss across all credential paths.
 
 - Add a portable configured runtime, PowerShell/Unix launchers, external config
   sample and optional human-only Windows credential entry helper. Both extra
