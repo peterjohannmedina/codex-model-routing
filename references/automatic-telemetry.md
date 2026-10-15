@@ -54,7 +54,10 @@ sh scripts/invoke-routing.sh dashboard --otel-token-file "$HOME/.codex/routing/o
 When `CODEX_HOME` is set, use that directory in place of `~/.codex`. `-CodexHome` /
 `--codex-home` and the dashboard's state-directory options support explicit paths.
 Use the same port in planning and dashboard startup. Start one receiver/dashboard,
-then start new normal Codex sessions. No wrapper, hook trust bypass or per-session
+then restart Codex before starting normal new sessions. A shared app-server
+daemon may also retain its startup telemetry settings; save work and restart it
+through the supported lifecycle before acceptance testing when applicable. This
+tool never restarts or interrupts a daemon. No wrapper, hook trust bypass or per-session
 collector is required. No model request is made by the setup or dashboard.
 
 Setup preserves the original config bytes in an owner-private backup and checks
