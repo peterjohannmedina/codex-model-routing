@@ -2,6 +2,16 @@
 
 ## Unreleased — 2026-10-15
 
+- Add a standalone loopback dashboard with persistent optional-provider controls,
+  bounded local metadata ledger, session scope, daily totals, live polling and
+  separate evaluator/downstream usage and estimated costs. No provider traffic
+  originates from the dashboard; no global telemetry setting is changed.
+- Add opt-in Codex exec JSON collection with stable correlation, replay dedup,
+  late-usage enrichment, redaction and retention. Explicitly label unsupported
+  TUI/ChatGPT feeds, unknown usage and unavailable measured billing.
+- Package dashboard assets/startup and interpreter discovery for clean installs;
+  add ledger/security/live HTTP and dependency-free UI regressions.
+
 - Make preflight dominate local-execution and consent flags on every platform.
   Preserve configured local readiness authentication in Windows preflight without
   loading DPAPI or invoking Decisions; add fake-transport and child-env regressions.

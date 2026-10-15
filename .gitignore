@@ -16,3 +16,4 @@ __pycache__/
 # User configuration/credentials belong outside this repository.
 .env*
 *.dpapi
+usage.sqlite3*

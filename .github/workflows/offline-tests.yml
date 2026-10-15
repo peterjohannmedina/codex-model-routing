@@ -2,6 +2,8 @@ name: Offline routing tests
 on: [push, pull_request]
 jobs:
   routing:
+    env:
+      ROUTING_REQUIRE_HTTP_TESTS: '1'
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -13,3 +15,4 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -s tests -v
+      - run: node tests/test_dashboard_ui.js

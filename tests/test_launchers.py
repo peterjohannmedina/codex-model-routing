@@ -152,10 +152,18 @@ class UnixInstall(unittest.TestCase):
             self.assertTrue((user / '.codex' / 'AGENTS.md').exists())
             self.assertFalse((user / '.codex' / 'agents' / 'muse-worker.toml').exists())
             self.assertFalse((user / '.codex' / 'routing').exists())
-            for name in ('Invoke-Routing.ps1', 'Set-RoutingApiKey.ps1', 'routing_runtime.py', 'invoke-routing.sh'):
+            for name in ('Invoke-Routing.ps1', 'Set-RoutingApiKey.ps1', 'routing_runtime.py', 'invoke-routing.sh',
+                         'routing_state.py', 'routing_dashboard.py', 'collect_codex_json.py',
+                         'Resolve-RoutingPython.ps1', 'Start-RoutingDashboard.ps1'):
                 self.assertTrue((skill / 'scripts' / name).exists())
             result = subprocess.run(['sh', str(skill / 'scripts' / 'invoke-routing.sh'),
                 str(skill / 'assets' / 'routing-packet.example.json'), '--offline'],
                 capture_output=True, text=True, env=env, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)['provenance']['used_provider'], 'rules')
+            collected = subprocess.run(['sh', str(skill / 'scripts' / 'invoke-routing.sh'), 'collect-codex',
+                '--stream-id', '22222222-2222-4222-8222-222222222222'],
+                input='{"type":"turn.completed","usage":{"input_tokens":0,"output_tokens":1}}\n',
+                capture_output=True, text=True, env=env, timeout=15)
+            self.assertEqual(collected.returncode, 0, collected.stderr)
+            self.assertTrue((user / '.codex' / 'routing' / 'usage.sqlite3').exists())

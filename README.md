@@ -62,6 +62,30 @@ Both installers copy the complete skill, including launchers and configuration e
 
 Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
 
+## Local dashboard and live observations
+
+One localhost dashboard aggregates the instrumented runtime and opt-in Codex
+exec JSON streams. It includes persistent provider controls, session drilldown,
+retained daily totals, model/effort and override/fallback metadata, separate
+evaluator/downstream usage, and labeled cost estimates. It refreshes every two
+seconds without provider health checks or toggle-triggered execution.
+
+```powershell
+powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1
+```
+
+```sh
+sh scripts/invoke-routing.sh dashboard
+```
+
+Open `http://127.0.0.1:8765` directly. Provider credentials are never read by the
+dashboard. The instrumented runtime keeps a bounded local metadata ledger by
+default (7 days / 500 requests), with disable/clear controls and no external
+export. Existing older/private adapters, arbitrary already-open TUI sessions and
+the ChatGPT app are unobserved. A recommendation does not switch a running CLI
+model or prove execution. See [setup, privacy and supported sources](references/dashboard.md)
+and the [dashboard requirements](references/dashboard-prd.md).
+
 ## Usage
 
 The routing skill is intended to apply automatically to nontrivial work. It can also be invoked explicitly with:

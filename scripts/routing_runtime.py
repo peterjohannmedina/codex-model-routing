@@ -13,8 +13,10 @@ import time
 from urllib.parse import urlsplit
 import urllib.error
 import urllib.request
+import uuid
 
 import routing_decision as core
+import routing_state as state
 
 
 @dataclass(frozen=True)
@@ -44,10 +46,11 @@ class LocalConfig:
 class Config:
     decisions: DecisionsConfig = field(default_factory=DecisionsConfig)
     local: LocalConfig = field(default_factory=LocalConfig)
+    observability: state.LedgerSettings = field(default_factory=state.LedgerSettings)
 
     @classmethod
     def parse(cls, raw):
-        value = core.object_fields(raw, {'schema_version', 'decisions', 'local'}, {'schema_version'})
+        value = core.object_fields(raw, {'schema_version', 'decisions', 'local', 'observability'}, {'schema_version'})
         if type(value['schema_version']) is not int or value['schema_version'] != 1:
             raise core.RoutingError('unsupported_config_schema')
         decisions = DecisionsConfig(**core.object_fields(value.get('decisions', {}), set(DecisionsConfig.__dataclass_fields__), set()))
@@ -78,7 +81,30 @@ class Config:
             raise core.RoutingError('invalid_local_model')
         if local.base_url is not None and not isinstance(local.base_url, str):
             raise core.RoutingError('invalid_local_url')
-        return cls(decisions, local)
+        try:
+            observability = state.LedgerSettings.parse(value.get('observability', {}))
+        except ValueError:
+            raise core.RoutingError('invalid_observability_configuration') from None
+        return cls(decisions, local, observability)
+
+
+def transport_observer(transport, local=False):
+    observations = {'attempts': 0, 'usage': None}
+    def observed(*args):
+        inference = not local or args[0] == 'POST'
+        if inference: observations['attempts'] += 1
+        raw = transport(*args)
+        if inference:
+            try:
+                reported = core.read_json(raw.decode('utf-8')).get('usage')
+                if local and isinstance(reported, dict):
+                    reported = {'input_tokens': reported.get('prompt_tokens'),
+                                'output_tokens': reported.get('completion_tokens')}
+                observations['usage'] = state.usage(reported)
+            except (ValueError, TypeError, AttributeError, UnicodeError, RecursionError):
+                pass
+        return raw
+    return observed, observations
 
 
 def local_url(config: LocalConfig):
@@ -214,6 +240,7 @@ def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
                                   fallback_reason=reason, local_status=local_status)
     if config.decisions.enabled and len(request.candidates) == 1:
         baseline['provenance']['resolution'] = 'single_admissible_route'
+    baseline['observations'] = {'evaluator_attempts': 0, 'evaluator_usage': {'input_tokens': 0, 'output_tokens': 0}}
     if preflight_only:
         return {'preflight': {'admissible_candidates': len(request.candidates), 'may_load_credential': may_load,
                              'requires_api': requires_api, 'block_reason': reason,
@@ -222,11 +249,14 @@ def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
                              'local_status': local_status,
                              'decisions_api_calls': 0}, 'safe_result': baseline}
     if may_load:
+        observed, observations = transport_observer(decision_transport)
         provider = core.DecisionsProvider(api_key=environment.get(config.decisions.api_key_env, ''), allow_api=True,
             timeout_seconds=config.decisions.timeout_seconds, minimum_confidence=config.decisions.minimum_confidence,
-            transport=decision_transport)
+            transport=observed)
         result = core.recommend(request, provider)
         result['provenance']['local_status'] = local_status
+        result['observations'] = {'evaluator_attempts': observations['attempts'],
+            'evaluator_usage': observations['usage'] if observations['attempts'] else {'input_tokens': 0, 'output_tokens': 0}}
         return result
     return baseline
 
@@ -236,15 +266,22 @@ def execute_local(packet, config, overrides=core.Overrides(), environment=None, 
     """Explicit bounded text execution. Failure returns a recommendation, never paid native execution."""
     environment = os.environ if environment is None else environment
     started = time.monotonic()
+    transport, observations = transport_observer(transport, local=True)
+    def finish(result):
+        result['observations'] = {'evaluator_attempts': 0, 'evaluator_usage': {'input_tokens': 0, 'output_tokens': 0},
+                                 'downstream_attempts': observations['attempts'], 'downstream_usage': observations['usage']}
+        if observations['attempts']:
+            result['observations'].update(execution_adapter='local', execution_model=local.model, execution_effort=local.effort)
+        return result
     request, status = prepare(packet, config, overrides, environment, transport)
     local = next((c for c in request.candidates if c.adapter == 'local'), None)
     baseline = core.recommend(request, core.RulesProvider())
     if not allow_local_inference or local is None:
         baseline['execution'] = {'status': 'not_started', 'reason': 'local_inference_not_authorized' if not allow_local_inference else status}
-        return baseline
+        return finish(baseline)
     if 'tokens' in request.ceilings or 'cost_usd' in request.ceilings:
         baseline['execution'] = {'status': 'not_started', 'reason': 'execution_budget_unverifiable'}
-        return baseline
+        return finish(baseline)
     payload = {'model': local.model, 'messages': [
         {'role': 'system', 'content': 'Complete only this bounded text task. No tools, secrets or external actions.'},
         {'role': 'user', 'content': request.summary}], 'stream': False,
@@ -269,7 +306,7 @@ def execute_local(packet, config, overrides=core.Overrides(), environment=None, 
         baseline['provenance'].update(local_status=status, elapsed_ms=round((time.monotonic() - started) * 1000))
         baseline['execution'] = {'status': 'completed', 'text': content.strip(),
                                  'adapter': 'local', 'max_output_tokens': payload['max_tokens']}
-        return baseline
+        return finish(baseline)
     except Exception as error:
         reason = str(error) if isinstance(error, core.ProviderFailure) else 'malformed_output'
         # Re-admit with local unavailable; require-local fails rather than switching.
@@ -278,11 +315,11 @@ def execute_local(packet, config, overrides=core.Overrides(), environment=None, 
         try:
             request = core.Request.parse(native_packet, overrides)
         except core.RoutingError:
-            return {'error': 'required_route_failed', 'recommendation': None,
-                    'execution': {'status': 'failed', 'reason': reason, 'native_execution_started': False}}
+            return finish({'error': 'required_route_failed', 'recommendation': None,
+                    'execution': {'status': 'failed', 'reason': reason, 'native_execution_started': False}})
         baseline = core.recommend(request, core.RulesProvider())
         baseline['execution'] = {'status': 'failed', 'reason': reason, 'native_execution_started': False}
-        return baseline
+        return finish(baseline)
 
 
 def main(argv=None):
@@ -298,7 +335,36 @@ def main(argv=None):
     parser.add_argument('--max-decision-cost-usd', type=float)
     parser.add_argument('--execute-local', action='store_true')
     parser.add_argument('--allow-local-inference', action='store_true')
+    parser.add_argument('--session-id', default=os.environ.get('CODEX_ROUTING_SESSION_ID', 'unassigned'))
+    parser.add_argument('--request-id', default=str(uuid.uuid4()))
+    parser.add_argument('--no-ledger', action='store_true')
     args = parser.parse_args(argv)
+    ledger = None
+    ledger_status = 'disabled' if args.no_ledger else 'unavailable'
+    record = None
+    started = time.monotonic()
+    def publish(result):
+        if ledger is not None:
+            try:
+                outcome = result.get('safe_result', result)
+                candidate = outcome.get('recommendation') or {}
+                provenance = outcome.get('provenance', {})
+                observation = outcome.get('observations', {})
+                event = {**record, 'stage': 0 if args.preflight_only else 2,
+                    'model': candidate.get('model'), 'effort': candidate.get('effort'), 'adapter': candidate.get('adapter'),
+                    'fallback_reason': provenance.get('fallback_reason'), 'local_status': provenance.get('local_status'),
+                    'execution_status': outcome.get('execution', {}).get('status', 'unobserved'),
+                    'error': result.get('reason', result.get('error')) or outcome.get('execution', {}).get('reason'),
+                    'elapsed_ms': round((time.monotonic() - started) * 1000),
+                    **observation}
+                ledger.put(event)
+                result['ledger'] = {'status': 'recorded', 'request_id': record['request_id'], 'session_id': record['session_id']}
+            except (OSError, ValueError, state.sqlite3.Error):
+                result['ledger'] = {'status': 'unavailable'}
+        else:
+            result['ledger'] = {'status': ledger_status}
+        print(json.dumps(result, allow_nan=False))
+        return 2 if result.get('error') else 0
     try:
         config_path = args.config or Path(os.environ.get('CODEX_HOME', Path.home() / '.codex')) / 'routing' / 'config.json'
         raw = core.load_file(config_path) if config_path.is_file() else {'schema_version': 1}
@@ -312,8 +378,18 @@ def main(argv=None):
         if args.max_decision_cost_usd is not None:
             raw.setdefault('decisions', {})['max_cost_usd'] = args.max_decision_cost_usd
         config = Config.parse(raw)
+        if not config.observability.enabled: ledger_status = 'disabled'
+        session_id, request_id = state.identifier(args.session_id), state.identifier(args.request_id)
         packet = core.load_file(args.packet)
         overrides = core.Overrides.parse(core.load_file(args.overrides)) if args.overrides else core.Overrides()
+        record = {'source': 'router', 'session_id': session_id, 'request_id': request_id,
+                  'stage': 0 if args.preflight_only else 1, 'mode': 'preflight' if args.preflight_only else ('local_execute' if args.execute_local else 'recommend'),
+                  'local_enabled': config.local.enabled, 'decisions_enabled': config.decisions.enabled,
+                  'override_model': overrides.model, 'override_effort': overrides.effort, 'model_source': 'router_recommendation'}
+        if not args.no_ledger and config.observability.enabled:
+            ledger = state.Ledger(config_path.parent, config.observability)
+            try: ledger.put(record)
+            except (OSError, ValueError, state.sqlite3.Error): ledger = None
         # Preflight is advisory even when execution/consent switches are also
         # present. Match the PowerShell launcher: never infer during preflight.
         if args.preflight_only:
@@ -326,14 +402,11 @@ def main(argv=None):
         else:
             result = route(packet, config, overrides, allow_api=args.allow_api,
                            preflight_only=args.preflight_only, offline=args.offline)
-        print(json.dumps(result, allow_nan=False))
-        return 2 if result.get('error') else 0
+        return publish(result)
     except core.RoutingError as error:
-        print(json.dumps({'error': 'invalid_or_unsatisfied_routing_configuration', 'reason': str(error), 'execution_started': False}))
-        return 2
+        return publish({'error': 'invalid_or_unsatisfied_routing_configuration', 'reason': str(error), 'execution_started': False})
     except (ValueError, TypeError, OSError, RecursionError):
-        print(json.dumps({'error': 'invalid_or_unsatisfied_routing_configuration', 'execution_started': False}))
-        return 2
+        return publish({'error': 'invalid_or_unsatisfied_routing_configuration', 'execution_started': False})
 
 
 if __name__ == '__main__':

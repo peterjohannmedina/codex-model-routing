@@ -444,8 +444,11 @@ class PackageTests(unittest.TestCase):
             self.assertFalse((skill / '.env').exists())
             self.assertFalse((skill / 'scripts' / 'synthetic.dpapi').exists())
             for name in ('Invoke-Routing.ps1', 'routing_runtime.py', 'routing_decision.py',
-                         'Set-RoutingApiKey.ps1', 'invoke-routing.sh'):
+                         'Set-RoutingApiKey.ps1', 'invoke-routing.sh', 'routing_state.py',
+                         'routing_dashboard.py', 'collect_codex_json.py', 'Resolve-RoutingPython.ps1',
+                         'Start-RoutingDashboard.ps1'):
                 self.assertTrue((skill / 'scripts' / name).is_file(), name)
+            self.assertTrue((skill / 'assets' / 'dashboard' / 'index.html').is_file())
             self.assertFalse((user / '.codex' / 'agents' / 'muse-worker.toml').exists())
             self.assertFalse((user / '.codex' / 'agents' / 'ganglion-worker.toml').exists())
             self.assertFalse((user / '.codex' / 'routing').exists())

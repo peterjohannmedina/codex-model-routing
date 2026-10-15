@@ -9,6 +9,9 @@ param(
     [switch]$Offline,
     [switch]$ExecuteLocal,
     [switch]$AllowLocalInference,
+    [string]$RequestId = ([Guid]::NewGuid().ToString()),
+    [string]$SessionId,
+    [switch]$NoLedger,
     [Nullable[int]]$MaxDecisionInputTokens,
     [Nullable[decimal]]$MaxDecisionCostUsd,
     [string]$PythonPath,
@@ -114,8 +117,10 @@ foreach ($routingRequired in @($PythonPath, $PreflightScriptPath, $RoutingScript
     if (-not (Test-Path -LiteralPath $routingRequired -PathType Leaf)) { throw 'A required local routing file is missing.' }
 }
 $routingPacket = (Resolve-Path -LiteralPath $PacketPath).Path
-$routingPreflightArguments = @('-B', $PreflightScriptPath, $routingPacket, '--preflight-only')
-$routingArguments = @('-B', $RoutingScriptPath, $routingPacket)
+$routingPreflightArguments = @('-B', $PreflightScriptPath, $routingPacket, '--preflight-only', '--request-id', $RequestId)
+$routingArguments = @('-B', $RoutingScriptPath, $routingPacket, '--request-id', $RequestId)
+if ($SessionId) { $routingPreflightArguments += @('--session-id', $SessionId); $routingArguments += @('--session-id', $SessionId) }
+if ($NoLedger) { $routingPreflightArguments += '--no-ledger'; $routingArguments += '--no-ledger' }
 if ($Provider) { $routingPreflightArguments += @('--provider', $Provider); $routingArguments += @('--provider', $Provider) }
 if ($ConfigPath) { $routingPreflightArguments += @('--config', $ConfigPath); $routingArguments += @('--config', $ConfigPath) }
 if ($Offline) { $routingPreflightArguments += '--offline'; $routingArguments += '--offline' }
