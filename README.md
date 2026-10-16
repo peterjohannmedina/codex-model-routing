@@ -34,33 +34,114 @@ local server or key is required for the baseline. See
 [portable providers and local execution](references/local-workers.md) for config,
 secure credential options, readiness checks and bounded execution.
 
-## Install
+## Skill-first quickstart
 
-Clone this repository into a temporary or development directory, then use the installer for your platform.
-
-### macOS or Linux
+Prerequisites: **Codex CLI and an existing Python 3.11+ interpreter**. No EXE,
+SDK, Node package, local model server or API key is required. Git is optional:
+clone below, or download and extract the repository ZIP before opening its folder.
+The bootstrap installs no dependencies and changes no security permissions.
 
 ```sh
 git clone https://github.com/peterjohannmedina/codex-model-routing.git
 cd codex-model-routing
-./scripts/install.sh
 ```
 
-The shell installer requires `rsync`.
+**Linux / macOS:**
 
-### Windows
+```sh
+sh scripts/bootstrap.sh install --start --open-browser
+```
+
+**Windows PowerShell:**
 
 ```powershell
-git clone https://github.com/peterjohannmedina/codex-model-routing.git
-Set-Location .\codex-model-routing
-powershell.exe -NoProfile -File .\scripts\install.ps1
+powershell.exe -NoProfile -File .\scripts\bootstrap.ps1 -Command install -Start -OpenBrowser -Shortcuts
 ```
 
-PowerShell 7 (`pwsh`) can run the same installer.
+These commands explicitly install the skill, start its supporting background
+dashboard process and request browser opening. Plain `install` starts nothing;
+login startup and native telemetry remain off. No interactive CLI terminal needs
+to stay open, but the background server must be running to serve the dashboard.
+Its default URL is **http://127.0.0.1:8765**.
 
-Both installers copy the complete skill, including launchers and configuration examples, to `~/.codex/skills/codex-model-routing`, register the native profiles, install the routing prompt, and merge instructions into `~/.codex/AGENTS.md`. Existing named local profiles are preserved. Legacy local profiles are installed only with `-IncludeLegacyLocalProfiles` / `--include-legacy-local-profiles`, without overwriting existing profiles. On Windows, `~` means the current user's profile directory. Installation does not create a user configuration or credential file.
+The skill lives at `$CODEX_HOME/skills/codex-model-routing` or
+`~/.codex/skills/codex-model-routing`. Existing profiles, prompts, global
+instructions, credentials and settings are preserved; missing native profile and
+prompt templates are created as user-owned files. If the active Codex skill
+catalog does not refresh, start a new chat. File verification alone does not prove
+the current chat has discovered the skill.
 
-Start a new Codex chat or restart Codex after installation so the updated skill and agents are discovered.
+Use `CODEX_ROUTING_PYTHON` or Windows `-PythonPath` to select an existing interpreter.
+An unmanaged older install needs review and the explicit `--adopt-existing` /
+`-AdoptExisting` choice; known package files are backed up. See
+[bootstrap, safety and platform details](references/bootstrap.md).
+
+### Copy this one-time setup prompt into Codex CLI
+
+```text
+Install https://github.com/peterjohannmedina/codex-model-routing as a Codex CLI
+skill on this machine. Read its README, SKILL.md and references/bootstrap.md.
+Use a fresh clone/download, preserve unrelated work, and check Codex CLI plus
+an existing Python 3.11+ interpreter. Use scripts/bootstrap.ps1 on Windows or
+scripts/bootstrap.sh on Linux/macOS with install, explicit start and browser-open
+options. Windows user shortcuts are welcome. Do not silently install dependencies,
+change security permissions, overwrite personal profiles/config/credentials,
+enable login startup or native telemetry, make paid calls, or change my CLI model.
+
+If an unmanaged install exists, inspect it and prepare its backup/adoption choice
+before asking to use --adopt-existing. Never reset a dirty checkout. Run doctor
+and status; verify the installed SKILL.md name/path, package integrity and managed
+receiver. Use the installed open command again and verify it reuses the same
+instance. If sockets or GUI access are blocked, report that stage without a
+policy workaround or success claim. If the skill catalog needs a new chat, say so.
+
+Report version/content revision, interpreter, skill path, dashboard URL, reopening
+evidence, and open/status/stop/update/repair/rollback/uninstall commands. Distinguish
+actual observations from demo data and recommendations from actual model switching.
+```
+
+The [reusable setup prompt](references/setup-prompt.md) has the same consent and
+verification boundaries. The skill guides the parent agent; it does not silently
+switch a CLI session whose model is pinned or start a Decisions API call on install.
+
+### Reopen and manage the installed skill
+
+On Linux/macOS, set a convenient path once in your shell:
+
+```sh
+router_home=${CODEX_HOME:-"$HOME/.codex"}
+sh "$router_home/skills/codex-model-routing/scripts/bootstrap.sh" open
+```
+
+On Windows:
+
+```powershell
+$RouterHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+$Router = Join-Path $RouterHome 'skills/codex-model-routing/scripts/bootstrap.ps1'
+powershell.exe -NoProfile -File $Router -Command open
+```
+
+Use `status`, `doctor`, `start`, `stop`, `rollback` or `uninstall` in place of
+`open` (Windows uses `-Command`). Reopening starts if needed and obtains a fresh
+private browser handoff; it reuses the running server. The optional Windows
+desktop/Start menu shortcuts do the same. There is no browser-profile editing:
+authorize once, then bookmark the plain localhost URL with your browser's UI.
+If a bookmark later needs authorization, use `open` again.
+
+For updates, fetch/review the clone without discarding local changes, then run
+its bootstrap with `update`. `repair` restores owned package files from that
+reviewed source with a recovery backup. `rollback` restores the previous package
+snapshot. Uninstall leaves profiles, prompts, history, credentials, user config
+and backups, and never rewrites an existing telemetry exporter.
+
+Optional next-login startup is an explicit `install/update --login-startup`
+choice (Windows `-LoginStartup`). Remove it with `update --no-login-startup`
+(Windows `-LoginStartup:$false`). No system service or privilege change is used.
+Native telemetry needs its [separate approved setup](references/automatic-telemetry.md),
+then `start --otel-receiver` (Windows `-OtelReceiver`). Installation never activates
+the exporter. Credential settings take the name `OPENAI_API_KEY`, **not the secret**.
+Keep key values in your existing secure mechanism; no credential or paid request
+is required for the native baseline.
 
 ## Local dashboard and live observations
 
@@ -91,6 +172,9 @@ exec JSON streams. It includes persistent provider controls, session drilldown,
 retained daily totals, model/effort and override/fallback metadata, separate
 evaluator/downstream usage, and labeled cost estimates. It refreshes every two
 seconds without provider health checks or toggle-triggered execution.
+
+The foreground launcher below remains available for diagnostics; for background
+startup and reopening use the installed bootstrap's `open` command above.
 
 ```powershell
 powershell.exe -NoProfile -File .\scripts\Start-RoutingDashboard.ps1 -OpenBrowser

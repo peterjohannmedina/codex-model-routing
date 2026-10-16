@@ -2,6 +2,15 @@
 
 ## Unreleased - 2026-10-16
 
+- Add a skill-first, standard-library bootstrap and managed background dashboard
+  lifecycle with version/content receipts, private backups, guarded adoption,
+  update/repair/rollback/uninstall and preservation of user profiles/credentials.
+- Reopen through an independent owner-private control capability and renewed
+  browser handoff. Keep control, browser and OTel authorization separate; stop
+  only authenticated managed instances and refuse unmanaged occupied ports.
+- Document copyable Codex setup and Linux/macOS/Windows quickstarts, optional
+  user launchers/login startup, telemetry consent and actual-switching limits.
+
 - Clarify credential environment-name fields and reject invalid names before a
   save request. Return static field-specific validation hints without echoing
   submitted values; reserve reload guidance for actual version conflicts.

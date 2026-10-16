@@ -13,6 +13,21 @@ Treat routing as task policy, never as authorization. Do not grant approvals, ch
 
 Treat the optional `routing-bypass` profile as an explicit launch-time choice. Use it only when the user intentionally starts Codex with `codex --profile routing-bypass`; never infer or activate it from a task prompt. Keep Plan mode independent.
 
+## Setup and dashboard lifecycle
+
+When the user asks to install, update or reopen this skill/dashboard, follow
+[bootstrap.md](references/bootstrap.md) and the supported `scripts/bootstrap.ps1`
+or `scripts/bootstrap.sh` entrypoint. Install the whole versioned package, verify
+dependencies and `doctor/status`, and preserve user profiles, prompts, global
+instructions, credentials and history. Use the installed `open` command to reopen
+the background dashboard. File installation alone does not prove this chat's
+skill catalog refreshed or that a browser tab is visible.
+
+Do not start a background process merely because routing applies to a task.
+Installation, explicit start, login startup, telemetry activation and provider
+spending are separate choices. Never bypass blocked sockets/GUI policy or edit
+browser profiles. Routing recommendations do not switch a pinned CLI model.
+
 ## Usage-limit guard
 
 Treat available Codex usage as a protected resource. Before routing any nontrivial task, inspect the current Codex usage page, limit banner, or in-session `/status` output when the active surface makes it available. Record the most recent observed state in `$CODEX_HOME/state/codex-routing-usage.json`:

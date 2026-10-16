@@ -151,10 +151,12 @@ class Store:
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
-    def __init__(self, port, store, otel_capability=None):
+    def __init__(self, port, store, otel_capability=None, control_capability=None, instance_id=None, revision=None):
         self.store = store
         self.otel_capability = otel.capability(otel_capability) if otel_capability is not None else None
         self.otel_lock = threading.Lock()
+        self.control_capability = otel.capability(control_capability) if control_capability is not None else None
+        self.instance_id, self.revision = instance_id, revision
         self.store.otel_status['enabled'] = self.otel_capability is not None
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
@@ -189,6 +191,14 @@ class Server(ThreadingHTTPServer):
                 try: self.launch_path.unlink(missing_ok=True)
                 except OSError: pass
             return True
+
+    def renew_launch_file(self):
+        with self.bootstrap_lock:
+            if self.launch_path: self.launch_path.unlink(missing_ok=True)
+            self.bootstrap = secrets.token_urlsafe(32)
+            self.bootstrap_until = time.monotonic() + 300
+            self.bootstrap_used = False
+            return self.create_launch_file()
 
     def server_close(self):
         if self.launch_path:
@@ -281,6 +291,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/v1/logs': return self.otel_logs()
+        if self.path == '/api/lifecycle': return self.lifecycle()
         bootstrap = self.path == '/api/auth'
         if bootstrap:
             if not self.allowed(session=False) or self.headers.get('Origin') != self.server.origin:
@@ -314,6 +325,34 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {'error': 'invalid_or_sensitive_configuration'})
         except (OSError, state.sqlite3.Error):
             return self.reply(503, {'error': 'storage_unavailable'})
+
+    def lifecycle(self):
+        secret = self.server.control_capability
+        if secret is None: return self.reply(404, {'error': 'not_found'})
+        if (self.headers.get_all('Host', []) != [urlsplit(self.server.origin).netloc]
+                or len(self.headers.get_all('X-Routing-Control', [])) != 1
+                or not hmac.compare_digest(self.headers.get('X-Routing-Control', '').encode('utf-8'), secret.encode('ascii'))
+                or any(name.lower().startswith('sec-fetch-') or name.lower() == 'origin' for name in self.headers)):
+            return self.reply(403, {'error': 'forbidden_controller'})
+        if (self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding')
+                or self.headers.get('Transfer-Encoding')):
+            return self.reply(415, {'error': 'uncompressed_json_required'})
+        try:
+            if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
+            length = int(self.headers['Content-Length'])
+            if not 1 <= length <= 512: return self.reply(413, {'error': 'body_too_large'})
+            data = self.rfile.read(length)
+            if len(data) != length: raise ValueError()
+            raw = core.read_json(data.decode('utf-8'))
+            if not isinstance(raw, dict) or set(raw) != {'action'} or raw['action'] not in ('status', 'open', 'stop'):
+                raise ValueError()
+            result = {'instance_id': self.server.instance_id, 'revision': self.server.revision,
+                      'url': self.server.origin, 'otel_receiver_enabled': self.server.otel_capability is not None}
+            if raw['action'] == 'open': result['launch_file'] = str(self.server.renew_launch_file())
+            self.reply(200, result)
+            if raw['action'] == 'stop': threading.Thread(target=self.server.shutdown, daemon=True).start()
+        except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
+            return self.reply(400, {'error': 'invalid_lifecycle_request'})
 
     def otel_logs(self):
         secret = self.server.otel_capability
