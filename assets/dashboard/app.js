@@ -109,12 +109,24 @@ function addDetail(list, label, value) {
   const dt=document.createElement('dt'), dd=document.createElement('dd'); dt.textContent=label; dd.textContent=value ?? 'Unknown'; list.append(dt,dd);
 }
 function renderEvents(events) {
-  const holder = byId('events'); holder.replaceChildren();
+  const holder = byId('events'), current = Array.from(holder.children);
+  const existing = new Map(current.filter(row=>row.routingObservationKey).map(row=>[row.routingObservationKey,row]));
+  const focused = current.find(row=>row.routingObservationKey && document.activeElement===row.children[0])?.routingObservationKey;
   if (!events.length) {
-    const empty=document.createElement('div'); empty.className='empty'; empty.textContent='No instrumented activity in this scope. Connect an explicit router command or Codex exec JSON stream; other sessions remain unobserved.'; holder.append(empty); return;
+    const empty=document.createElement('div'); empty.className='empty'; empty.textContent='No instrumented activity in this scope. Connect an explicit router command or Codex exec JSON stream; other sessions remain unobserved.'; holder.replaceChildren(empty); return;
   }
+  const next=[], seen=new Set();
   for (const event of events.slice(0,100)) {
+    // IDs are stable across polling, enrichment and reordering. Include session
+    // and source so two scopes never borrow each other's expansion state.
+    let key=[event.source,event.session_id,event.request_id].every(value=>typeof value==='string')?
+      JSON.stringify([event.source,event.session_id,event.request_id]):null;
+    if(seen.has(key))key=null;
+    if(key)seen.add(key);
+    const previous=key?existing.get(key):null, data=JSON.stringify(event);
+    if(previous?.routingObservationData===data){next.push(previous);continue;}
     const row=document.createElement('details'), summary=document.createElement('summary');
+    row.routingObservationKey=key;row.routingObservationData=data;row.open=previous?.open || false;
     const source=event.source==='codex_otel'?'Codex OTel':event.source==='router'?'Router':'Codex exec';
     const status=event.mode==='otel_session'?'Session settings observed':event.mode==='otel_response'?'Model response observed':event.execution_status==='completed'?'Executed · complete':event.execution_status==='started'?'In progress':event.execution_status==='failed'||event.error?'Failed / stopped':'Recommendation';
     const values=[time(event.observed_at), (event.model || 'Model unobserved') + (event.effort ? ' · '+event.effort : ''), source, status];
@@ -139,7 +151,13 @@ function renderEvents(events) {
     addDetail(list,'Downstream input / output',number(event.downstream_usage?.input_tokens)+' / '+number(event.downstream_usage?.output_tokens));
     addDetail(list,'Command items',number(event.command_items));
     addDetail(list,'Observed / source timestamp',event.observed_at+' / '+(event.source_timestamp || 'Source timestamp unavailable'));
-    row.append(summary,list); holder.append(row);
+    row.append(summary,list); next.push(row);
+  }
+  // Leave unchanged nodes attached: expansion, text selection and keyboard focus
+  // survive ordinary polls. Restore summary focus when a real update moves it.
+  if(current.length!==next.length || next.some((row,index)=>row!==current[index])){
+    holder.replaceChildren(...next);
+    if(focused)next.find(row=>row.routingObservationKey===focused)?.children[0].focus({preventScroll:true});
   }
 }
 function renderChart(days) {

@@ -137,6 +137,30 @@ def main(argv=None):
                     expect(page.locator('#events details')).to_have_count(8)
                     page.locator('#events details').first.locator('summary').click()
                     page.locator('#activity').screenshot(path=str(output / 'dashboard-activity.png'), animations='disabled')
+                    stage = 'expanded-observation-polling-regression'
+                    observation_key = page.locator('#events details').first.evaluate('(node) => node.routingObservationKey')
+                    request_id = json.loads(observation_key)[2]
+                    expanded = page.locator('#events details').filter(has=page.get_by_text(request_id, exact=True))
+                    summary = expanded.locator('summary')
+                    summary.focus()
+                    for _ in range(2):
+                        with page.expect_response(lambda response: urlsplit(response.url).path == '/api/state'):
+                            pass
+                        expect(expanded).to_have_attribute('open', '')
+                        expect(summary).to_be_focused()
+                    # A new generated row enters through the real local backend,
+                    # so the existing observation moves without DOM substitution.
+                    extra = dict(fixture['events'][0], request_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+                    dashboard.state.Ledger(store.root).put(extra)
+                    expect(page.locator('#events details')).to_have_count(9)
+                    expect(expanded).to_have_attribute('open', '')
+                    expect(summary).to_be_focused()
+                    summary.press('Enter')
+                    for _ in range(2):
+                        with page.expect_response(lambda response: urlsplit(response.url).path == '/api/state'):
+                            pass
+                        expect(expanded).not_to_have_attribute('open', '')
+                        expect(summary).to_be_focused()
                     assert not blocked and not errors and not provider_attempts
                     assert not config_posts and not credential_transmissions
                     browser_version = browser.version
@@ -162,6 +186,7 @@ def main(argv=None):
             'provider_calls': 0, 'external_browser_requests': 0, 'real_user_data': False,
             'browser_invalid_save_cases': invalid_save_checks, 'configuration_posts': len(config_posts),
             'credential_transmissions': len(credential_transmissions), 'invalid_save_config_unchanged': True,
+            'browser_expansion_polling_regression': True,
             'note': 'Real reviewed HTML/CSS/JS and backend; only generated fixtures and the displayed observation clock are synthetic. No image editing or UI DOM substitution.'}
         (output / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
         print(json.dumps({'captured': list(images), 'reviewed_source': REVIEWED_SOURCE, 'provider_calls': 0}))

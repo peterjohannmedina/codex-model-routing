@@ -4,8 +4,11 @@ const root=path.resolve(__dirname,'..');
 const script=fs.readFileSync(path.join(root,'assets/dashboard/app.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'assets/dashboard/index.html'),'utf8');
 class Element{
-  constructor(type=''){this.type=type;this.value='';this.checked=false;this.children=[];this.listeners={};this.textContent='';}
-  append(...items){this.children.push(...items);}replaceChildren(...items){this.children=items;}
+  constructor(type='',owner=null){this.type=type;this.ownerDocument=owner;this.value='';this.checked=false;this.children=[];this.listeners={};this.textContent='';}
+  append(...items){this.children.push(...items);}
+  contains(node){return this===node||this.children.some(child=>child?.contains?.(node));}
+  replaceChildren(...items){if(this.children.some(child=>child?.contains?.(this.ownerDocument?.activeElement)))this.ownerDocument.activeElement=null;this.children=items;}
+  focus(options){this.ownerDocument.activeElement=this;this.focusOptions=options;}
   setAttribute(){}addEventListener(kind,fn){this.listeners[kind]=fn;}
   setCustomValidity(value){this.validationMessage=value;}
 }
@@ -33,9 +36,11 @@ function boot(hash,delaySave=false,denied=false){
     saves++;snapshot.config=body.config;snapshot.config_version='saved-'+saves;
     return{ok:true,json:async()=>({saved:true,config_version:snapshot.config_version})};
   };
-  const context=vm.createContext({document:{hidden:false,getElementById:id=>nodes[id],createElement:()=>new Element(),createElementNS:()=>new Element()},location:{hash,pathname:'/'},history:{replaceState:(_a,_b,value)=>historyChanges.push(value)},sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},fetch,AbortController,setTimeout,clearTimeout,setInterval:fn=>{interval=fn;},confirm:()=>false});
+  const document={hidden:false,activeElement:null,getElementById:id=>nodes[id],createElement:type=>new Element(type,document),createElementNS:()=>new Element('',document)};
+  Object.values(nodes).forEach(node=>{node.ownerDocument=document;});
+  const context=vm.createContext({document,location:{hash,pathname:'/'},history:{replaceState:(_a,_b,value)=>historyChanges.push(value)},sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},fetch,AbortController,setTimeout,clearTimeout,setInterval:fn=>{interval=fn;},confirm:()=>false});
   vm.runInContext(script,context);
-  return{nodes,calls,historyChanges,release,poll:()=>interval(),snapshot:()=>snapshot,forbid:()=>{denied=true;},
+  return{nodes,document,calls,historyChanges,release,poll:()=>interval(),snapshot:()=>snapshot,forbid:()=>{denied=true;},
     holdNextPoll:()=>{let resume;nextStateGate=new Promise(resolve=>{resume=resolve;});return resume;}};
 }
 async function anchors(){
@@ -100,4 +105,29 @@ async function expiredAuthorization(){
   assert.equal(racing.nodes.connection.textContent,'Browser authorization required','late successful GET cleared a newer authorization failure');
   assert.match(racing.nodes.message.textContent,/installed shortcut or bootstrap open/);
 }
-(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();console.log('Dashboard navigation, save, poll and expired-authorization regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
+async function observationExpansion(){
+  const ui=boot('');await flush();await flush();
+  const a={source:'codex_otel',session_id:'11111111-1111-4111-8111-111111111111',request_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',mode:'otel_response',model:'gpt-6-sol',effort:'max'};
+  const b={...a,request_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2'},c={...a,request_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3'};
+  ui.snapshot().events=[a,b];ui.poll();await flush();
+  const opened=ui.nodes.events.children[0];opened.open=true;opened.children[0].focus();
+  for(let i=0;i<3;i++){ui.poll();await flush();assert.equal(ui.nodes.events.children[0],opened);assert.equal(opened.open,true);assert.equal(ui.document.activeElement,opened.children[0]);}
+  ui.snapshot().events=[c,b,a];ui.poll();await flush();
+  assert.equal(ui.nodes.events.children[2],opened,'reordering changed record identity');
+  assert.equal(opened.open,true,'new event collapsed an existing row');
+  assert.equal(ui.document.activeElement,opened.children[0],'reordering lost summary focus');
+  assert.equal(opened.children[0].focusOptions.preventScroll,true);
+  ui.snapshot().events=[c,b,{...a,effort:'high'}];ui.poll();await flush();
+  const enriched=ui.nodes.events.children[2];assert.notEqual(enriched,opened);
+  assert.equal(enriched.open,true,'enrichment collapsed the same observation');
+  assert.equal(ui.document.activeElement,enriched.children[0]);
+  enriched.open=false;ui.poll();await flush();assert.equal(ui.nodes.events.children[2].open,false,'poll reopened a manually closed row');
+  ui.snapshot().events=[a,c,b];ui.poll();await flush();assert.equal(ui.nodes.events.children[0].open,false,'reordering reopened a manually closed row');
+  ui.nodes.events.children[0].open=true;
+  ui.snapshot().events=[{...a,session_id:'22222222-2222-4222-8222-222222222222'}];ui.poll();await flush();
+  assert.equal(ui.nodes.events.children[0].open,false,'a different session borrowed expansion state');
+  ui.nodes.events.children[0].open=true;
+  ui.snapshot().events=[{...a,source:'router',session_id:'22222222-2222-4222-8222-222222222222'}];ui.poll();await flush();
+  assert.equal(ui.nodes.events.children[0].open,false,'a different source borrowed expansion state');
+}
+(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();if(!selected||selected==='expansion')await observationExpansion();console.log('Dashboard navigation, save, poll, authorization and expansion regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
