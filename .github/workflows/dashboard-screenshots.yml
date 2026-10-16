@@ -4,6 +4,9 @@ on:
     paths:
       - 'assets/dashboard/**'
       - 'scripts/routing_dashboard.py'
+      - 'scripts/routing_catalog.py'
+      - 'scripts/routing_runtime.py'
+      - 'scripts/routing_decision.py'
       - 'scripts/routing_state.py'
       - 'scripts/routing_otel.py'
       - 'tests/capture_dashboard.py'

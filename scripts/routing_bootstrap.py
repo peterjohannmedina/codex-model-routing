@@ -21,6 +21,7 @@ import webbrowser
 
 import routing_installation as installation
 import routing_platform as platform
+import routing_catalog as catalog
 
 ERROR_HINTS={
     'recreated_path_rollback_refused':'A removed package path now contains new content. Preserve or move it before retrying rollback; no package files were restored.',
@@ -223,6 +224,8 @@ def doctor(paths):
     result=status(paths)
     result.update(python='.'.join(map(str,sys.version_info[:3])),python_supported=sys.version_info>=(3,11),
                   codex_cli_found=shutil.which('codex') is not None,credentials_checked=False,model_calls=0,
+                  catalog_cli_found=catalog.cli_path() is not None,
+                  catalog_cli_requirement='native codex.exe on Windows; executable codex on macOS/Linux',
                   discovery='Files are checked; the current Codex skill catalog may require a new chat.')
     return result
 

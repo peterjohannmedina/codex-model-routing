@@ -17,6 +17,7 @@ import uuid
 
 import routing_decision as core
 import routing_state as state
+import routing_catalog as catalog
 
 
 @dataclass(frozen=True)
@@ -43,14 +44,22 @@ class LocalConfig:
 
 
 @dataclass(frozen=True)
+class NativeConfig:
+    # None preserves an existing unmanaged installation. [] deliberately denies
+    # every native model. New IDs never enter a saved explicit allowlist.
+    allowed_models: list[str] | None = None
+
+
+@dataclass(frozen=True)
 class Config:
     decisions: DecisionsConfig = field(default_factory=DecisionsConfig)
     local: LocalConfig = field(default_factory=LocalConfig)
     observability: state.LedgerSettings = field(default_factory=state.LedgerSettings)
+    native: NativeConfig = field(default_factory=NativeConfig)
 
     @classmethod
     def parse(cls, raw):
-        value = core.object_fields(raw, {'schema_version', 'decisions', 'local', 'observability'}, {'schema_version'})
+        value = core.object_fields(raw, {'schema_version', 'decisions', 'local', 'observability','native'}, {'schema_version'})
         if type(value['schema_version']) is not int or value['schema_version'] != 1:
             raise core.RoutingError('unsupported_config_schema')
         decisions = DecisionsConfig(**core.object_fields(value.get('decisions', {}), set(DecisionsConfig.__dataclass_fields__), set()))
@@ -85,7 +94,13 @@ class Config:
             observability = state.LedgerSettings.parse(value.get('observability', {}))
         except ValueError:
             raise core.RoutingError('invalid_observability_configuration') from None
-        return cls(decisions, local, observability)
+        native = NativeConfig(**core.object_fields(value.get('native',{}), {'allowed_models'}, set()))
+        if native.allowed_models is not None and (not isinstance(native.allowed_models,list)
+                or len(native.allowed_models)>catalog.MAX_MODELS
+                or any(not catalog.model_id(m) for m in native.allowed_models)
+                or len(set(native.allowed_models)) != len(native.allowed_models)):
+            raise core.RoutingError('invalid_native_models')
+        return cls(decisions, local, observability, native)
 
 
 def transport_observer(transport, local=False):
@@ -161,13 +176,15 @@ def local_request(config, environment, transport, method='GET', body=None):
         raise core.ProviderFailure('malformed_output') from None
 
 
-def prepare(packet, config=Config(), overrides=core.Overrides(), environment=None, local_transport=local_http, offline=False):
+def prepare(packet, config=Config(), overrides=core.Overrides(), environment=None, local_transport=local_http, offline=False,
+            native_catalog=None):
     """Probe configured local capacity without inference; failures remove only local choices."""
     environment = os.environ if environment is None else environment
+    packet = catalog.restrict(packet, config.native.allowed_models, native_catalog)
     packet = copy.deepcopy(packet)
     # Check the original trusted schema before changing readiness fields.
     core.object_fields(packet, {'schema_version', 'summary', 'available_models', 'candidates', 'fallback_id',
-        'conservation_mode', 'stronger_exception', 'local_work_eligible', 'ready_adapters', 'ceilings', 'require_local'},
+        'conservation_mode', 'stronger_exception', 'local_work_eligible', 'ready_adapters', 'ceilings', 'require_local','required_modalities'},
         {'schema_version', 'summary', 'available_models', 'candidates', 'fallback_id', 'conservation_mode'})
     # Hypothetical readiness lets admission reject overrides/budgets before a
     # probe. It does not establish readiness; only the validated probe does.
@@ -206,6 +223,12 @@ def prepare(packet, config=Config(), overrides=core.Overrides(), environment=Non
     except core.RoutingError as error:
         if packet.get('require_local', False) and str(error) == 'no_admissible_route':
             raise core.RoutingError('require_local_unavailable') from None
+        if str(error)=='no_admissible_route' and config.native.allowed_models is not None:
+            if overrides.model and overrides.model not in config.native.allowed_models:
+                raise core.RoutingError('requested_native_model_disabled') from None
+            if not config.native.allowed_models: raise core.RoutingError('no_native_models_enabled') from None
+            if catalog.public(native_catalog)['status']!='queried': raise core.RoutingError('native_catalog_refresh_required') from None
+            raise core.RoutingError('native_model_or_effort_unavailable') from None
         raise
     admitted = tuple(c for c in request.candidates if c.adapter != 'local' or
                      (c.model == config.local.model and c.effort in config.local.efforts))
@@ -218,16 +241,23 @@ def prepare(packet, config=Config(), overrides=core.Overrides(), environment=Non
     return request, local_status
 
 
+def evaluator_block_reason(config):
+    return ('evaluator_model_disabled' if config.native.allowed_models is not None
+            and core.DECISION_MODEL not in config.native.allowed_models else None)
+
+
 def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
           decision_transport=core.post_decisions, local_transport=local_http, allow_api=False,
-          preflight_only=False, offline=False):
+          preflight_only=False, offline=False, native_catalog=None):
     environment = os.environ if environment is None else environment
-    request, local_status = prepare(packet, config, overrides, environment, local_transport, offline)
+    request, local_status = prepare(packet, config, overrides, environment, local_transport, offline, native_catalog)
     baseline = core.recommend(request, core.RulesProvider())
     requires_api = config.decisions.enabled and len(request.candidates) > 1
     reason = None
     if requires_api:
-        if offline:
+        if evaluator_block_reason(config):
+            reason = evaluator_block_reason(config)
+        elif offline:
             reason = 'offline'
         elif config.decisions.max_input_tokens is not None:
             reason = 'verified_decisions_token_counter_unavailable'
@@ -262,7 +292,7 @@ def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
 
 
 def execute_local(packet, config, overrides=core.Overrides(), environment=None, transport=local_http,
-                  allow_local_inference=False):
+                  allow_local_inference=False, native_catalog=None):
     """Explicit bounded text execution. Failure returns a recommendation, never paid native execution."""
     environment = os.environ if environment is None else environment
     started = time.monotonic()
@@ -273,7 +303,7 @@ def execute_local(packet, config, overrides=core.Overrides(), environment=None, 
         if observations['attempts']:
             result['observations'].update(execution_adapter='local', execution_model=local.model, execution_effort=local.effort)
         return result
-    request, status = prepare(packet, config, overrides, environment, transport)
+    request, status = prepare(packet, config, overrides, environment, transport, native_catalog=native_catalog)
     local = next((c for c in request.candidates if c.adapter == 'local'), None)
     baseline = core.recommend(request, core.RulesProvider())
     if not allow_local_inference or local is None:
@@ -313,7 +343,8 @@ def execute_local(packet, config, overrides=core.Overrides(), environment=None, 
         native_packet = copy.deepcopy(packet)
         native_packet['ready_adapters'] = []
         try:
-            request = core.Request.parse(native_packet, overrides)
+            request, _ = prepare(native_packet, replace(config,local=replace(config.local,enabled=False)),
+                                 overrides, environment, offline=True, native_catalog=native_catalog)
         except core.RoutingError:
             return finish({'error': 'required_route_failed', 'recommendation': None,
                     'execution': {'status': 'failed', 'reason': reason, 'native_execution_started': False}})
@@ -378,6 +409,7 @@ def main(argv=None):
         if args.max_decision_cost_usd is not None:
             raw.setdefault('decisions', {})['max_cost_usd'] = args.max_decision_cost_usd
         config = Config.parse(raw)
+        native_catalog = catalog.load(config_path.parent) if config.native.allowed_models is not None else None
         if not config.observability.enabled: ledger_status = 'disabled'
         session_id, request_id = state.identifier(args.session_id), state.identifier(args.request_id, allow_unassigned=False)
         packet = core.load_file(args.packet)
@@ -394,14 +426,14 @@ def main(argv=None):
         # present. Match the PowerShell launcher: never infer during preflight.
         if args.preflight_only:
             result = route(packet, config, overrides, allow_api=args.allow_api,
-                           preflight_only=True, offline=args.offline)
+                           preflight_only=True, offline=args.offline, native_catalog=native_catalog)
         elif args.execute_local:
             if args.offline:
                 raise core.RoutingError('local_execution_in_offline_mode')
-            result = execute_local(packet, config, overrides, allow_local_inference=args.allow_local_inference)
+            result = execute_local(packet, config, overrides, allow_local_inference=args.allow_local_inference, native_catalog=native_catalog)
         else:
             result = route(packet, config, overrides, allow_api=args.allow_api,
-                           preflight_only=args.preflight_only, offline=args.offline)
+                           preflight_only=args.preflight_only, offline=args.offline, native_catalog=native_catalog)
         return publish(result)
     except core.RoutingError as error:
         return publish({'error': 'invalid_or_unsatisfied_routing_configuration', 'reason': str(error), 'execution_started': False})

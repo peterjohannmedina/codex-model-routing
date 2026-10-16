@@ -57,10 +57,12 @@ class ScreenshotStore(dashboard.Store):
     def __init__(self, root, fixture):
         super().__init__(root)
         self.fixture_clock = fixture['snapshot_time']
+        self.catalog_fixture = fixture.get('model_catalog')
 
     def snapshot(self, session=None):
         result = super().snapshot(session)
         result['observed_at'] = self.fixture_clock
+        if self.catalog_fixture: result['model_catalog'] = self.catalog_fixture
         return result
 
 
