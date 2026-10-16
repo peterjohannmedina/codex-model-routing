@@ -117,9 +117,23 @@ class Store:
             'validated_batches': 0, 'recording_disabled_batches': 0,
             **{reason + '_records': 0 for reason in otel.IGNORE_REASONS},
             'supported_cli_versions': list(otel.SUPPORTED_VERSIONS), 'exporter_configuration': 'unverified',
+            'schema_compatible_series': list(otel.SCHEMA_SERIES),
             'runtime_version': package_version(),
+            'running_revision': None, 'producer_metadata': {'versions': {}, 'events': {}, 'features': {}},
             'started_at': state.dt.datetime.now(state.dt.timezone.utc).isoformat(),
             'state_id': hashlib.sha256(str(self.root).encode()).hexdigest()[:12]}
+
+    def runtime_identity(self):
+        """Compare the actual server's loaded revision with the install receipt."""
+        installed = None
+        try:
+            value = json.loads((self.root/'dashboard-service'/'installation.json').read_text(encoding='utf-8'))
+            revision = value.get('revision')
+            if isinstance(revision, str) and re.fullmatch(r'[0-9.]+\+[0-9a-f]{16}', revision): installed = revision
+        except (OSError, ValueError, TypeError, AttributeError): pass
+        running = self.otel_status.get('running_revision')
+        return {'pid': os.getpid(), 'installed_revision': installed,
+                'restart_required': installed != running if installed is not None and running is not None else None}
 
     def write_receiver_status(self):
         """Fixed metadata/counters only; never raw export data, IDs or capabilities."""
@@ -130,7 +144,8 @@ class Store:
             descriptor, name = tempfile.mkstemp(prefix='.receiver-status-', dir=self.root)
             try:
                 with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-                    json.dump({'schema_version': 1, 'kind': 'routing_receiver', **self.otel_status}, stream)
+                    json.dump({'schema_version': 1, 'kind': 'routing_receiver', **self.otel_status,
+                               **self.runtime_identity()}, stream)
                 os.replace(name, path)
             finally: Path(name).unlink(missing_ok=True)
         except OSError: pass  # Diagnostics never turn accepted ingestion into failure.
@@ -193,6 +208,7 @@ class Server(ThreadingHTTPServer):
         self.otel_lock = threading.Lock()
         self.control_capability = otel.capability(control_capability) if control_capability is not None else None
         self.instance_id, self.revision = instance_id, revision
+        self.store.otel_status['running_revision'] = revision
         self.store.otel_status['enabled'] = self.otel_capability is not None
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
@@ -207,6 +223,15 @@ class Server(ThreadingHTTPServer):
         self.cookie_name = 'routing_' + str(self.server_port)
         self.last_status_write = 0
         self.record_otel()
+
+    def record_producer(self, producer):
+        with self.otel_lock:
+            target = self.store.otel_status['producer_metadata']
+            for kind in ('versions', 'events', 'features'):
+                for label, amount in producer.get(kind, {}).items():
+                    counts = target[kind]
+                    if label not in counts and len(counts) >= otel.VERSION_TALLY_LIMIT: label = 'other'
+                    counts[label] = counts.get(label, 0) + amount
 
     def record_otel(self, received=False, observed=False, **increments):
         with self.otel_lock:
@@ -339,7 +364,10 @@ class Handler(BaseHTTPRequestHandler):
                 if set(query) - {'session'} or any(len(v) != 1 for v in query.values()): raise ValueError()
                 session = state.identifier(query['session'][0]) if 'session' in query else None
                 snapshot = self.server.store.snapshot(session)
-                with self.server.otel_lock: snapshot['otel_receiver'] = dict(self.server.store.otel_status)
+                with self.server.otel_lock:
+                    snapshot['otel_receiver'] = {**self.server.store.otel_status, **self.server.store.runtime_identity()}
+                    snapshot['otel_receiver']['producer_metadata'] = {
+                        kind: dict(counts) for kind, counts in self.server.store.otel_status['producer_metadata'].items()}
                 return self.reply(200, snapshot)
             return self.reply(404, {'error': 'not_found'})
         except (ValueError, TypeError, RecursionError, OSError, state.sqlite3.Error):
@@ -446,8 +474,9 @@ class Handler(BaseHTTPRequestHandler):
             config, _ = self.server.store.config()
             settings = state.LedgerSettings.parse(config['observability'])
             if settings.enabled:
-                diagnostics = {}
-                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings), diagnostics)
+                diagnostics, producer = {}, {}
+                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings), diagnostics, producer)
+                self.server.record_producer(producer)
                 self.server.record_otel(received=True, observed=counts['accepted'] > 0, requests=1, validated_batches=1,
                     **{field + '_records': amount for field, amount in counts.items()},
                     **{reason + '_records': amount for reason, amount in diagnostics.items()})

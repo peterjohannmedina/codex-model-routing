@@ -78,6 +78,9 @@ put on a command line or written to browser profiles. The URL is normally
 After authorization, bookmark that plain URL with the browser's own bookmark UI.
 Never bookmark the temporary authorization fragment or private handoff file. If a
 bookmark opens an unauthorized page after a browser restart, use `open` again.
+An unauthorized tab stops polling and keeps these recovery instructions visible;
+the supported open action renews authorization without restarting a matching
+running receiver. An older in-flight response cannot mark that stale tab connected.
 Headless environments can use `open --no-browser`; it returns a private handoff
 path to open manually. Browser launch failure is reported and never equated with
 a verified visible tab. No CUA/GUI automation or browser-profile editing is used.

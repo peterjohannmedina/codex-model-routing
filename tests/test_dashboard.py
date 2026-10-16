@@ -74,6 +74,18 @@ class LocalState(unittest.TestCase):
         self.assertEqual(state.totals(rows)['downstream']['input_tokens'], {'known': 0, 'unknown_requests': 0})
         self.assertFalse(self.ledger.put({**item, 'stage': 0, 'downstream_usage': {'input_tokens': 50}}))
 
+    def test_running_revision_compares_content_identity_not_receipt_mtime(self):
+        store=dashboard.Store(self.root)
+        installed=self.root/'dashboard-service'/'installation.json';installed.parent.mkdir()
+        revision='2026.10.16.2+0123456789abcdef'
+        store.otel_status['running_revision']=revision
+        installed.write_text(json.dumps({'revision':revision}))
+        self.assertFalse(store.runtime_identity()['restart_required'])
+        installed.write_text(json.dumps({'revision':'2026.10.16.2+fedcba9876543210'}))
+        self.assertTrue(store.runtime_identity()['restart_required'])
+        installed.unlink()
+        self.assertIsNone(store.runtime_identity()['restart_required'])
+
     def test_metadata_allowlist_excludes_sensitive_payloads(self):
         secret = 'sk-proj-' + 'A' * 30
         self.ledger.put(event(prompt=secret, text=secret, endpoint='http://user:' + secret + '@host',

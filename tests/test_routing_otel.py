@@ -89,7 +89,7 @@ class OTelMetadata(unittest.TestCase):
     def test_ignore_generic_completion_errors_and_unknown_version(self):
         generic=record();generic['attributes']=[a for a in generic['attributes'] if a['key'] not in ('input_token_count','output_token_count')]
         error=record(**{'error.message':'synthetic-private-error'})
-        changed=record(**{'app.version':'0.163.1'})
+        changed=record(**{'app.version':'0.164.0'})
         self.assertEqual(otel.ingest(payload(generic,error,changed),self.ledger)['ignored'],3)
         self.assertEqual(self.ledger.snapshot(),[])
 
@@ -99,9 +99,84 @@ class OTelMetadata(unittest.TestCase):
             record(**{'app.version':'0.163.0'}),record(**{'app.version':'synthetic-secret-never-store'}),
             record(**{'event.name':'synthetic-private-event'}),record(**{'event.kind':'response.failed'})),self.ledger,diagnostics)
         self.assertEqual(result,{'accepted':2,'ignored':3,'rejected':0})
-        self.assertEqual(diagnostics,{'unsupported_version':1,'unsupported_event':1,'non_usage_response':1})
+        self.assertEqual(diagnostics,{'invalid_version':1,'unsupported_event':1,'non_usage_response':1})
         self.assertEqual(state.totals(self.ledger.snapshot())['otel']['responses'],1)
         self.assertNotIn('synthetic-',json.dumps(diagnostics)+json.dumps(self.ledger.snapshot()))
+
+    def test_real_producer_shape_classifies_unrelated_events_before_version(self):
+        # Shape observed from genuine ingress, with every value synthetic. The
+        # resource version must not convert exec/API events into usage records.
+        items=[]
+        for name in ('codex.exec_server.process_start','codex.exec_server.process_exit','codex.api_request'):
+            item=record(**{'event.name':name})
+            item['attributes']=[a for a in item['attributes'] if a['key']!='app.version']
+            items.append(item)
+        body=json.loads(payload(*items))
+        body['resourceLogs'][0]['resource']['attributes']=[
+            {'key':'service.version','value':{'stringValue':'0.163.0-alpha.10.2'}},
+            {'key':'private-field-name-never-retain','value':{'stringValue':'synthetic-private'}}]
+        diagnostics,producer={},{}
+        self.assertEqual(otel.ingest(json.dumps(body).encode(),self.ledger,diagnostics,producer),
+                         {'accepted':0,'ignored':3,'rejected':0})
+        self.assertEqual(diagnostics,{'unsupported_event':3})
+        self.assertEqual(producer,{'versions':{'resource:0.163.0-alpha.10.2':3},
+                                   'events':{'process':2,'api_request':1}})
+        self.assertEqual(self.ledger.snapshot(),[])
+        self.assertNotIn('private',json.dumps(producer))
+
+    def test_missing_invalid_and_actual_unsupported_versions_are_distinct(self):
+        missing=record();missing['attributes']=[a for a in missing['attributes'] if a['key']!='app.version']
+        malformed=record()
+        next(a for a in malformed['attributes'] if a['key']=='app.version')['value']={'arrayValue':{'values':[]}}
+        diagnostics,producer={},{}
+        result=otel.ingest(payload(missing,malformed,record(**{'app.version':'0.164.0'}),
+             record(**{'app.version':'0.165.0-alpha.10.2'}),record(**{'app.version':'synthetic-secret-never-retain'})),
+             self.ledger,diagnostics,producer)
+        self.assertEqual(result,{'accepted':0,'ignored':5,'rejected':0})
+        self.assertEqual(diagnostics,{'missing_version':1,'invalid_version':2,'unsupported_version':2})
+        self.assertNotIn('synthetic-',json.dumps(producer))
+        self.assertEqual(self.ledger.snapshot(),[])
+        for invalid in ({'stringValue':123},{'intValue':'0.163.0'},{'intValue':True}):
+            self.assertIsNone(otel.scalar(invalid))
+        self.assertEqual(otel.scalar({'intValue':'123'}),'123')
+
+    def test_resource_version_never_silently_promotes_missing_session_version(self):
+        item=record('start');item['attributes']=[a for a in item['attributes'] if a['key']!='app.version']
+        body=json.loads(payload(item))
+        body['resourceLogs'][0]['resource']['attributes']=[{'key':'service.version','value':{'stringValue':'0.163.0'}}]
+        diagnostics={}
+        self.assertEqual(otel.ingest(json.dumps(body).encode(),self.ledger,diagnostics)['accepted'],0)
+        self.assertEqual(diagnostics,{'missing_version':1})
+
+    def test_producer_diagnostics_bounded_and_never_retain_arbitrary_names(self):
+        producer={}
+        for i in range(100):
+            otel.metadata(record(**{'app.version':f'0.163.{i}','event.name':'synthetic-private-event'}),producer=producer)
+        self.assertLessEqual(len(producer['versions']),otel.VERSION_TALLY_LIMIT+1)
+        self.assertEqual(producer['events'],{'other':100})
+        self.assertNotIn('synthetic-private',json.dumps(producer))
+        item={'synthetic-private-name':'synthetic-private-value','eventName':'synthetic-private-event'}
+        self.assertIsNone(otel.metadata(item,producer=producer))
+        self.assertEqual(producer['features'],{'unknown_record_fields':1,'top_level_event_name_only':1})
+        self.assertNotIn('synthetic-private',json.dumps(producer))
+
+    def test_patch_and_prerelease_require_schema_features_and_keep_provenance(self):
+        producer={}
+        for version in ('0.163.1','0.163.0-alpha.10.2'):
+            with self.subTest(version=version):
+                start=otel.metadata(record('start',**{'app.version':version}),producer=producer)
+                response=otel.metadata(record(**{'app.version':version}),producer=producer)
+                self.assertEqual(start['contract_validation'],'reviewed_series_schema')
+                self.assertEqual(response['producer_version'],version)
+                for changes in ({'model':None},{'event.timestamp':'invalid'},
+                                {'input_token_count':'unknown','output_token_count':'unknown'},
+                                {'output_token_count':-1},{'output_token_count':'not-a-count'},
+                                {'cached_token_count':'not-a-count'}):
+                    diagnostics={}
+                    self.assertIsNone(otel.metadata(record(**{'app.version':version,**changes}),diagnostics))
+                    self.assertEqual(diagnostics,{'schema_mismatch':1})
+        self.assertEqual(producer['events']['schema_compatible'],4)
+        self.assertEqual(otel.metadata(record())['contract_validation'],'reviewed_version')
 
     def test_first_request_failure_persists_classification_even_inside_write_interval(self):
         for outcome in ('unauthorized_requests','invalid_batches','storage_errors'):
@@ -405,7 +480,7 @@ class OTelHTTP(unittest.TestCase):
         self.assertEqual(self.store.otel_status['recording_disabled_batches'],1)
 
     def test_version_mismatch_is_visible_without_fabricating_sessions(self):
-        self.assertEqual(self.request(raw=payload(record(**{'app.version':'0.163.1'})))[0],200)
+        self.assertEqual(self.request(raw=payload(record(**{'app.version':'0.164.0'})))[0],200)
         self.assertEqual(self.store.otel_status['unsupported_version_records'],1)
         self.assertIsNone(self.store.otel_status['last_observation_at'])
         self.assertEqual(self.store.snapshot()['sessions'],[])

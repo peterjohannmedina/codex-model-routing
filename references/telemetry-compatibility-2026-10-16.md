@@ -1,11 +1,27 @@
 # CLI 0.163.0 compatibility and empty feeds
 
-Runtime 2026.10.16.1 accepted only `app.version=0.162.1`. The installed CLI
-subsequently reported 0.163.0, so otherwise valid new-version records were ignored.
-Runtime 2026.10.16.2 accepts exactly 0.162.1 and 0.163.0, preserves the metadata
-allowlist, and exposes reasons for ignored records. Unknown future versions still
-fail closed. This is a reproduced parser defect; it does not prove why any one
-live producer has sent no events.
+Runtime 2026.10.16.3 separates missing, invalid and unreviewed versions from
+unrelated events. Earlier runtimes classified every record lacking the log-record
+`app.version` as an unsupported CLI version, even API/process events that have no
+session/response usage. The parser now classifies event kinds first. This corrects
+a reproduced diagnostic defect; it does not establish why a live producer has sent
+no session or response events.
+
+The exact source-reviewed versions remain 0.162.1 and 0.163.0. Within the reviewed
+0.162/0.163 series, unlisted patch and numeric alpha/beta/rc builds may match the
+existing schema after stricter validation: the required event-level version,
+event name, model, UUID and source timestamp must be valid; starts require a known
+effort; completed responses require both nonnegative input/output counts and a
+valid cached count if supplied. Stable exported timestamps remain mandatory for
+response deduplication. Malformed or missing features do not create observations.
+New minor/major series still require review. No prerelease prefix is stripped to
+pretend an exact build was source-reviewed.
+
+Accepted observations retain `producer_version` and `contract_validation`.
+`reviewed_series_schema` means a structural match, with exact build semantics
+unverified. It is visibly distinct from `reviewed_version`. Extra payload fields
+remain discarded; fixed counters indicate unknown top-level fields or an absent
+`event.name` without persisting their names or values.
 
 OpenAI's source at `rust-v0.162.1` and `rust-v0.163.0` has identical Git blobs for
 the [session events](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/otel/src/events/session_telemetry.rs)
@@ -16,6 +32,12 @@ the [session events](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs
 change only suppresses additional trace spans; JSON log export and configured
 headers retain the same contract. An independent review also reproduced the old
 gate ignoring 0.163.0 fixtures. No inference is needed to test this contract.
+
+The [0.163.0-alpha.10.2 common-fields macro](https://github.com/openai/codex/blob/rust-v0.163.0-alpha.10.2/codex-rs/otel/src/events/shared.rs)
+also emits `app.version` on the log record. The provider's resource
+`service.version` describes the producer process; it is diagnostic context and
+never silently replaces the required event version. OpenTelemetry's tracing bridge
+uses an empty instrumentation scope, so a scope version is not a substitute.
 
 ## Identify the missing stage
 
@@ -30,19 +52,35 @@ from retained ledger observations, including the selected session filter.
 | No validated batch | Check the producer's host, Codex home, loaded startup config, endpoint and receiver lifetime. A connected tab is not exporter evidence. |
 | Unauthorized requests | Review the existing approved endpoint/header capability; never print the capability or replace it automatically. Browser requests are intentionally refused. |
 | Invalid batches | Confirm uncompressed OTLP/HTTP JSON, size limits and supported schema. |
-| Unsupported-version records | Verify the producer's actual backend version before reviewing another exact contract. PATH CLI version does not establish desktop-backend version. |
+| Unsupported-version records | The event version belongs to an unreviewed minor/major series. Review the contract before expanding compatibility. PATH CLI version does not establish desktop-backend version. |
+| Missing/invalid-version records | A relevant session/response event lacks a valid event-level version. A resource version alone cannot establish the session contract. |
+| Schema-mismatch records | An unlisted build in a reviewed series failed the stricter feature checks. Do not guess missing model, timestamps or counts. |
+| Only API/process event classes | Genuine traffic arrived, but it is not evidence of a session start or response usage. A version change cannot manufacture the absent events. |
 | Other ignored records | Generic transport events, failed responses and unrelated event kinds do not create session/usage observations. |
 | Recording-disabled batches | Export arrived, but local recording was disabled. Those records were deliberately not stored. |
 | Storage errors | Inspect state access; raw error text and payloads are never logged. |
 | Accepted metadata, missing selected session | Check the session filter, retention and whether accepted metadata describes a different observed session. No active-process inventory is inferred. |
 
-`routing/receiver-status.json` stores only fixed counters, runtime version,
-timestamps and a state-directory fingerprint. It contains no raw records, session
+`routing/receiver-status.json` stores fixed counters and event classes, bounded
+numeric build labels, installed/running revisions, PID, runtime version,
+timestamps and a state-directory fingerprint. Resource/event version labels are
+separate. It contains no raw records, arbitrary attribute names, session
 IDs, exporter headers, capabilities or user configuration. It resets per receiver
 process. Each first failure category is written immediately; repeated invalid/
 unauthorized burst updates are limited to once per second. Authenticated UI counters
 are current. The file is best-effort and may be
 stale after a receiver exits. Its existence alone is not live health.
+
+The browser retains its cookie plus per-tab origin capability. On authorization
+failure it stops polling, disables writes and preserves reopening guidance, even
+if an older successful request finishes later. Reopen through the installed
+shortcut or `bootstrap open` to renew the one-use handoff. Do not restart Codex or
+relax Host, Origin, cookie or CSRF checks to repair a stale browser tab.
+
+The routing runtime does not depend on the dashboard process. Ledger write errors
+remain best-effort: an offline routing recommendation still succeeds and reports
+`ledger.status=unavailable`. Regression coverage exercises failure both before
+routing and while publishing its result. No provider request is required.
 
 ## Minimum real acceptance
 

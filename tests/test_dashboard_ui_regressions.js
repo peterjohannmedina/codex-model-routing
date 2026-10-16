@@ -10,7 +10,7 @@ class Element{
   setCustomValidity(value){this.validationMessage=value;}
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-function boot(hash,delaySave=false){
+function boot(hash,delaySave=false,denied=false){
   const nodes={},calls=[],historyChanges=[];
   for(const match of html.matchAll(/<([a-z]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g))nodes[match[3]]=new Element(/\btype="([^"]+)"/.exec(match[2])?.[1]||'');
   let snapshot={config:JSON.parse(fs.readFileSync(path.join(root,'assets/routing-config.example.json'),'utf8')),config_version:'base',events:[],sessions:[],daily:[],observed_at:'2026-10-15T22:00:00Z',totals:{requests:0,completed_executions:0,evaluator:{input_tokens:{known:0,unknown_requests:0}},downstream:{input_tokens:{known:0,unknown_requests:0}},evaluator_base_cost_estimate_usd:null,local_cost_estimate_usd:null}};
@@ -21,6 +21,7 @@ function boot(hash,delaySave=false){
     calls.push({url,options});
     if(url==='/api/auth')throw new Error('navigation_anchor_sent_as_bootstrap');
     assert.equal(options.headers['X-Routing-CSRF'],'fixture-capability');
+    if(denied)return{ok:false,status:403,json:async()=>({error:'forbidden_origin_or_session'})};
     if(url==='/api/session')return{ok:true,json:async()=>({csrf:'fixture-capability'})};
     if(url==='/api/state'){
       const captured=structuredClone(snapshot), delayed=nextStateGate;nextStateGate=null;
@@ -34,7 +35,7 @@ function boot(hash,delaySave=false){
   };
   const context=vm.createContext({document:{hidden:false,getElementById:id=>nodes[id],createElement:()=>new Element(),createElementNS:()=>new Element()},location:{hash,pathname:'/'},history:{replaceState:(_a,_b,value)=>historyChanges.push(value)},sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},fetch,AbortController,setTimeout,clearTimeout,setInterval:fn=>{interval=fn;},confirm:()=>false});
   vm.runInContext(script,context);
-  return{nodes,calls,historyChanges,release,poll:()=>interval(),snapshot:()=>snapshot,
+  return{nodes,calls,historyChanges,release,poll:()=>interval(),snapshot:()=>snapshot,forbid:()=>{denied=true;},
     holdNextPoll:()=>{let resume;nextStateGate=new Promise(resolve=>{resume=resolve;});return resume;}};
 }
 async function anchors(){
@@ -79,4 +80,24 @@ async function stalePoll(){
   const posts=ui.calls.filter(c=>c.url==='/api/config');
   assert.equal(JSON.parse(posts[1].options.body).version,'saved-1','old GET restored the pre-save version');
 }
-(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();console.log('Dashboard navigation, delayed-save and stale-poll regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
+async function expiredAuthorization(){
+  const initial=boot('',false,true);await flush();await flush();
+  assert.equal(initial.nodes.connection.textContent,'Browser authorization required');
+  assert.match(initial.nodes.message.textContent,/installed shortcut or bootstrap open/);
+  assert.match(initial.nodes.message.textContent,/no server restart/);
+  const calls=initial.calls.length;initial.poll();initial.poll();await flush();
+  assert.equal(initial.calls.length,calls,'unauthorized tab kept polling and overwrote recovery guidance');
+  const existing=boot('');await flush();await flush();
+  existing.forbid();existing.poll();await flush();await flush();
+  assert.equal(existing.nodes.connection.textContent,'Browser authorization required');
+  assert.equal(existing.nodes.save.disabled,true);
+  assert.match(existing.nodes.message.textContent,/displayed values may be stale/);
+  const after=existing.calls.length;existing.poll();await flush();assert.equal(existing.calls.length,after);
+  const racing=boot('');await flush();await flush();
+  const resume=racing.holdNextPoll();racing.poll();await flush();racing.forbid();
+  await racing.nodes['config-form'].listeners.submit({preventDefault(){}});
+  resume();await flush();await flush();
+  assert.equal(racing.nodes.connection.textContent,'Browser authorization required','late successful GET cleared a newer authorization failure');
+  assert.match(racing.nodes.message.textContent,/installed shortcut or bootstrap open/);
+}
+(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();console.log('Dashboard navigation, save, poll and expired-authorization regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});

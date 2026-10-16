@@ -244,6 +244,22 @@ class OptionalProviders(unittest.TestCase):
         self.assertEqual(result['execution']['reason'], 'deadline_exhausted')
         self.assertFalse(result['execution']['native_execution_started'])
 
+    def test_offline_routing_survives_initial_and_final_ledger_failures(self):
+        for writes in ([OSError('synthetic storage unavailable')], [True,OSError('synthetic storage unavailable')]):
+            with self.subTest(writes=len(writes)):
+                output=io.StringIO()
+                with (patch.object(Path,'is_file',return_value=True),
+                      patch.object(core,'load_file',side_effect=[{'schema_version':1},packet()]),
+                      patch.object(runtime.state,'Ledger') as ledger,
+                      patch.object(core.DecisionsProvider,'choose',side_effect=AssertionError('offline provider call')),
+                      patch.object(core,'bounded_call',side_effect=AssertionError('network request')),
+                      redirect_stdout(output)):
+                    ledger.return_value.put.side_effect=writes
+                    self.assertEqual(runtime.main(['packet.json','--config','config.json','--offline']),0)
+                result=json.loads(output.getvalue())
+                self.assertEqual(result['ledger']['status'],'unavailable')
+                self.assertEqual(result['recommendation']['adapter'],'native')
+
     def test_cli_preflight_dominates_execution_and_consent(self):
         raw = {'schema_version': 1, **asdict(configuration(True, True))}
         for offline in (False, True):

@@ -2,6 +2,13 @@
 const byId = id => document.getElementById(id);
 let csrf = '', formVersion = '', dirty = false, polling = false, loaded = false;
 let editRevision = 0, formEpoch = 0, saving = false;
+let authorizationRequired = false;
+function requireAuthorization() {
+  authorizationRequired = true; loaded = false;
+  text('connection','Browser authorization required');
+  text('message','Reopen Routing desk using its installed shortcut or bootstrap open command. This obtains a fresh one-use browser authorization; no server restart is needed. This tab has stopped polling and its displayed values may be stale.');
+  byId('message').className='error';byId('save').disabled=true;byId('reload').disabled=true;
+}
 const fields = {
   decisions: {'enabled':'decisions-enabled','api_key_env':'decisions-key-env','timeout_seconds':'decisions-timeout','minimum_confidence':'decisions-confidence','max_input_tokens':'decision-token-cap','max_cost_usd':'decision-cost-cap'},
   local: {'enabled':'local-enabled','base_url':'local-url','model':'local-model','api_key_env':'local-key-env','efforts':'local-efforts','timeout_seconds':'local-timeout','max_output_tokens':'local-output','allow_remote':'local-remote','prefer_when_eligible':'local-prefer'},
@@ -69,6 +76,7 @@ async function api(path, body, bootstrap) {
     const response = await fetch(path, options);
     const value = await response.json();
     if (!response.ok) {
+      if(path!=='/api/auth'&&response.status===403)requireAuthorization();
       const error=new Error(value.error || 'local_request_failed');error.code=value.error;error.field=value.field;throw error;
     }
     return value;
@@ -115,6 +123,10 @@ function renderEvents(events) {
     addDetail(list,'Session',event.session_id); addDetail(list,event.source==='codex_otel'?'Observation (derived ID)':'Request',event.request_id);
     addDetail(list,'Session evidence',event.session_source || (event.session_id==='unassigned'?'Unassigned':'Caller-assigned UUID'));
     addDetail(list,'Source / mode',event.source+' / '+(event.mode || 'unknown'));
+    if(event.source==='codex_otel'){
+      addDetail(list,'Producer version',event.producer_version);
+      addDetail(list,'Contract evidence',event.contract_validation==='reviewed_version'?'Source-reviewed version':event.contract_validation==='reviewed_series_schema'?'Reviewed series schema match; exact build semantics unverified':'Not recorded');
+    }
     addDetail(list,'Model evidence',event.model_source); addDetail(list,'Execution',event.execution_status);
     addDetail(list,'Execution request model / effort',(event.execution_model || 'Unobserved')+' / '+(event.execution_effort || 'Unobserved'));
     addDetail(list,'Collector stream',event.stream_status || 'Not a collected stream');
@@ -151,6 +163,8 @@ function render(data, formFresh = true) {
   let diagnostic=!receiver?.enabled?'Start the approved receiver to receive CLI exports.':
     !receiver.runtime_version?'This receiver predates compatibility diagnostics. Update and restart the dashboard receiver through its supported lifecycle before testing new CLI exports; this does not restart Codex.':
     receiver.unsupported_version_records?'Some records use an unsupported CLI version; check compatibility before upgrading the receiver.':
+    receiver.missing_version_records?'Session or response records arrived without the required event app.version; the resource version alone does not establish that session contract.':
+    receiver.invalid_version_records?'Session or response records have an invalid event app.version field; check the producer schema.':
     receiver.unauthorized_requests?'Some exporter requests failed authorization or Host/origin checks; review the approved endpoint and capability setup.':
     receiver.invalid_batches?'Some exporter requests failed JSON/schema/size checks; use uncompressed OTLP/HTTP JSON.':
     receiver.storage_errors?'Some observations could not be stored; check local state access.':
@@ -163,6 +177,17 @@ function render(data, formFresh = true) {
     '. Accepted / ignored / rejected records: '+count(receiver?.accepted_records)+' / '+count(receiver?.ignored_records)+' / '+count(receiver?.rejected_records)+'.';
   if(receiver?.state_id)diagnostic+=' Local state ID: '+receiver.state_id+'.';
   if(receiver?.runtime_version)diagnostic+=' Runtime: '+receiver.runtime_version+'.';
+  if(receiver?.producer_metadata){
+    const events=receiver.producer_metadata.events||{};
+    diagnostic+=' Producer event classes: session starts '+count(events.session_start)+', response events '+count(events.response_event)+', API requests '+count(events.api_request)+', process events '+count(events.process)+', other '+count(events.other)+', missing event name '+count(events.missing)+'.';
+    if(!events.session_start&&!events.response_event&&receiver.last_received_at)diagnostic+=' No session-start or response event has reached this receiver; API/process traffic does not contain response usage.';
+    if(events.schema_compatible)diagnostic+=' '+count(events.schema_compatible)+' observations match the reviewed series schema; their exact build semantics remain unverified.';
+    const features=receiver.producer_metadata.features||{};
+    if(features.unknown_record_fields)diagnostic+=' '+count(features.unknown_record_fields)+' records contain unrecognized top-level fields; names and values were discarded.';
+    if(features.top_level_event_name_only)diagnostic+=' '+count(features.top_level_event_name_only)+' records have only a top-level event name, without the reviewed event.name attribute.';
+  }
+  if(receiver?.running_revision)diagnostic+=' Running revision: '+receiver.running_revision+'.';
+  if(receiver?.restart_required===true)diagnostic+=' Installed files differ from this running receiver; reopen through the installed launcher to apply the update.';
   text('otel-diagnostics',diagnostic);
   text('requests',number(totals.requests)); text('executions',number(totals.completed_executions));
   for(const name of ['evaluator','downstream']) {
@@ -186,10 +211,10 @@ function render(data, formFresh = true) {
   text('updated','Refreshed '+time(data.observed_at)+' · local observation time');text('connection','Dashboard connected · 2s');
 }
 async function refresh(){
-  if(polling)return;polling=true;
+  if(polling||authorizationRequired)return;polling=true;
   const pollEpoch=formEpoch;
-  try{const data=await api('/api/state'+(byId('session').value?'?session='+encodeURIComponent(byId('session').value):''));render(data,pollEpoch===formEpoch);text('message','');}
-  catch(error){text('connection','Disconnected');text('message','Local data unavailable: '+error.message+'. The last displayed values may be stale.');byId('message').className='error';}
+  try{const data=await api('/api/state'+(byId('session').value?'?session='+encodeURIComponent(byId('session').value):''));if(authorizationRequired)return;render(data,pollEpoch===formEpoch);text('message','');}
+  catch(error){if(!authorizationRequired){text('connection','Disconnected');text('message','Local data unavailable: '+error.message+'. The last displayed values may be stale.');byId('message').className='error';}}
   finally{polling=false;}
 }
 byId('config-form').addEventListener('input',()=>{editRevision++;dirty=true;text('save-status','Unsaved changes. Live observations continue.');});
@@ -210,7 +235,7 @@ byId('config-form').addEventListener('submit',async event=>{
     text('save-status',dirty?'Saved earlier snapshot; newer edits remain unsaved.':'Settings saved locally. No key was stored or checked. No provider request was made.');
   }
   catch(error){text('save-status',saveError(error));}
-  finally{saving=false;byId('save').disabled=false;byId('reload').disabled=false;}
+  finally{saving=false;byId('save').disabled=!loaded;byId('reload').disabled=authorizationRequired;}
 });
 byId('reload').addEventListener('click',()=>{if(saving)return;formEpoch++;dirty=false;refresh();});
 byId('session').addEventListener('change',refresh);
@@ -224,5 +249,5 @@ byId('clear').addEventListener('click',async()=>{if(!confirm('Delete retained lo
     finally{history.replaceState(null,'',location.pathname);}
   }
   csrf=(await api('/api/session')).csrf;await refresh();
-}catch(error){text('message','Open the private one-use launch file from the server terminal to authorize this browser. Restart the server if the file expired.');}
-setInterval(()=>{if(!document.hidden)refresh();},2000);})();
+}catch(error){if(error.code==='local_browser_authorization_required'||authorizationRequired)requireAuthorization();else{text('connection','Disconnected');text('message','Local connection unavailable. Reopen Routing desk using its installed shortcut or bootstrap open command.');}}
+setInterval(()=>{if(!document.hidden&&!authorizationRequired)refresh();},2000);})();

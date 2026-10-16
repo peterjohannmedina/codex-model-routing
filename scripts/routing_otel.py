@@ -13,7 +13,15 @@ import routing_state as state
 MAX_BYTES = 1048576
 MAX_RECORDS = 512
 SUPPORTED_VERSIONS = ('0.162.1', '0.163.0')
-IGNORE_REASONS = ('unsupported_version', 'unsupported_event', 'non_usage_response')
+SCHEMA_SERIES = ('0.162', '0.163')
+IGNORE_REASONS = ('unsupported_version', 'missing_version', 'invalid_version',
+                  'unsupported_event', 'missing_event', 'non_usage_response', 'schema_mismatch')
+EVENT_CLASSES = {'codex.conversation_starts': 'session_start', 'codex.sse_event': 'response_event',
+                 'codex.api_request': 'api_request', 'codex.exec_server.process_start': 'process',
+                 'codex.exec_server.process_exit': 'process'}
+VERSION_TALLY_LIMIT = 16
+RECORD_FIELDS = {'timeUnixNano','observedTimeUnixNano','severityNumber','severityText','body',
+                 'attributes','droppedAttributesCount','flags','traceId','spanId','eventName','_resource_version'}
 HEADER = 'X-Routing-OTel'
 
 
@@ -25,8 +33,9 @@ def capability(value):
 
 def scalar(value):
     if not isinstance(value, dict) or len(value) != 1: return None
-    for key in ('stringValue', 'intValue'):
-        if key in value and type(value[key]) in (str, int): return value[key]
+    if 'stringValue' in value and isinstance(value['stringValue'], str): return value['stringValue']
+    number = value.get('intValue')
+    if type(number) is int or isinstance(number, str) and re.fullmatch(r'-?[0-9]{1,20}', number): return number
     return None
 
 
@@ -54,20 +63,55 @@ def token_count(value):
     return state.count(value)
 
 
-def metadata(record, diagnostics=None):
+def version_label(value):
+    # Only numeric release/build identifiers can enter diagnostics. No arbitrary
+    # exporter strings, field names, bodies, identities or content hashes.
+    return value if isinstance(value, str) and re.fullmatch(
+        r'[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-(?:alpha|beta|rc)\.[0-9]{1,4}(?:\.[0-9]{1,4})?)?', value) else 'invalid'
+
+
+def tally(producer, kind, label):
+    if producer is None: return
+    counts = producer.setdefault(kind, {})
+    if label not in counts and len(counts) >= VERSION_TALLY_LIMIT: label = 'other'
+    counts[label] = counts.get(label, 0) + 1
+
+
+def metadata(record, diagnostics=None, producer=None):
     def ignore(reason):
         if diagnostics is not None: diagnostics[reason] = diagnostics.get(reason, 0) + 1
         return None
     if not isinstance(record, dict): raise ValueError('invalid_record')
     attrs = attributes(record)
-    if attrs.get('app.version') not in SUPPORTED_VERSIONS: return ignore('unsupported_version')
+    if set(record) - RECORD_FIELDS: tally(producer, 'features', 'unknown_record_fields')
+    if 'event.name' not in attrs and 'eventName' in record: tally(producer, 'features', 'top_level_event_name_only')
+    # Resource service.version describes the producing process, not necessarily
+    # the embedded session telemetry crate. Observe it; never silently substitute
+    # it for the reviewed session event's required app.version.
+    resource_version = record.get('_resource_version')
+    if resource_version is not None: tally(producer, 'versions', 'resource:' + version_label(resource_version))
+    if 'app.version' in attrs: tally(producer, 'versions', 'event:' + version_label(attrs['app.version']))
     name = attrs.get('event.name')
+    tally(producer, 'events', EVENT_CLASSES.get(name, 'missing' if name is None else 'other'))
+    if name is None: return ignore('missing_event')
+    # Unrelated API/process events legitimately omit app.version. Classify the
+    # event first so they cannot masquerade as an unsupported CLI release.
     if name not in ('codex.conversation_starts', 'codex.sse_event'): return ignore('unsupported_event')
+    if 'app.version' not in attrs: return ignore('missing_version')
+    version = attrs['app.version']
+    if version_label(version) == 'invalid': return ignore('invalid_version')
+    reviewed = version in SUPPORTED_VERSIONS
+    if not reviewed and '.'.join(version.split('.')[:2]) not in SCHEMA_SERIES: return ignore('unsupported_version')
     session = state.identifier(attrs.get('conversation.id'), allow_unassigned=False)
     event = {'source': 'codex_otel', 'session_id': session, 'session_source': 'codex_thread',
              'stage': 2, 'adapter': 'native', 'model': state.label(attrs.get('model')),
              'evaluator_usage': {'input_tokens': 0, 'output_tokens': 0}, 'evaluator_attempts': 0}
+    event.update(producer_version=version, contract_validation='reviewed_version' if reviewed else 'reviewed_series_schema')
+    if not reviewed and (state.label(attrs.get('model')) is None or state.timestamp(attrs.get('event.timestamp')) is None):
+        return ignore('schema_mismatch')
     if name == 'codex.conversation_starts':
+        if not reviewed and attrs.get('reasoning_effort') not in ('none','minimal','low','medium','high','xhigh','max','ultra'):
+            return ignore('schema_mismatch')
         identity = 'session-configuration'
         event.update(mode='otel_session', model_source='startup_configuration',
                      execution_status='session_observed', effort=state.label(attrs.get('reasoning_effort')))
@@ -76,6 +120,11 @@ def metadata(record, diagnostics=None):
         # The same source also emits a generic SSE notification without usage.
         # Ignore it rather than counting one response twice.
         if not {'input_token_count', 'output_token_count'} & attrs.keys(): return ignore('non_usage_response')
+        if not reviewed:
+            if any(token_count(attrs.get(key)) is None for key in ('input_token_count','output_token_count')):
+                return ignore('schema_mismatch')
+            if 'cached_token_count' in attrs and token_count(attrs['cached_token_count']) is None:
+                return ignore('schema_mismatch')
         nano = record.get('timeUnixNano')
         clock = 'source'
         # Codex's OpenTelemetry 0.31 tracing bridge does not set event time.
@@ -105,6 +154,7 @@ def metadata(record, diagnostics=None):
     for key in ('model', 'effort', 'source_timestamp'):
         if event.get(key) is None: event.pop(key, None)
     normalized = state.sanitize(event)
+    if not reviewed: tally(producer, 'events', 'schema_compatible')
     return {key: value for key, value in normalized.items() if key in event}
 
 
@@ -121,7 +171,18 @@ def records(payload):
             if not isinstance(scope, dict): raise ValueError('invalid_scope')
             logs = scope.get('logRecords', [])
             if not isinstance(logs, list): raise ValueError('invalid_logs')
-            result.extend(logs)
+            # Carry only the version scalar, never resource identities or raw
+            # attributes. This is diagnostic context, not an acceptance fallback.
+            resource_version = None
+            envelope = resource.get('resource')
+            if isinstance(envelope, dict):
+                fields = envelope.get('attributes', [])
+                if isinstance(fields, list):
+                    for item in fields[:96]:
+                        if isinstance(item, dict) and item.get('key') == 'service.version':
+                            resource_version = scalar(item.get('value'))
+                            break
+            result.extend({**log, '_resource_version': resource_version} if isinstance(log, dict) else log for log in logs)
             if len(result) > MAX_RECORDS: raise ValueError('record_limit')
     return result
 
@@ -138,13 +199,13 @@ def decode(raw):
     return records(json.loads(raw.decode('utf-8'), object_pairs_hook=unique, parse_constant=invalid))
 
 
-def ingest(raw, ledger, diagnostics=None):
+def ingest(raw, ledger, diagnostics=None, producer=None):
     items = decode(raw)
     accepted = ignored = rejected = 0
     # Fully normalize before any write. Exceptions never include raw values.
     events = []
     for item in items:
-        try: event = metadata(item, diagnostics)
+        try: event = metadata(item, diagnostics, producer)
         except (ValueError, TypeError, OverflowError, OSError):
             rejected += 1
             continue
