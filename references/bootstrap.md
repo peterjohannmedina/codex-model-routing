@@ -115,6 +115,7 @@ Stop never trusts a PID alone and never force-kills an unrelated listener.
 Startup validates private state permissions and fails closed rather than repairing
 ACLs, changing a firewall or bypassing blocked sockets. Windows uses the shipped
 read-only ACL probe. Unix uses current-user ownership and restrictive modes.
+Numeric loopback binding performs no hostname/DNS lookup during startup.
 No API key is needed. Credential fields contain environment-variable names such
 as `OPENAI_API_KEY`, not secret values. No provider or metered request is made by
 install, status, open or stop.

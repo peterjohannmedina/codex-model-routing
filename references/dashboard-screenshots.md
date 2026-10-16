@@ -25,7 +25,7 @@ temporary PR merge `042f7281709fe2413b8fd1795104449f4f6aaaac` for branch head
 [this CI run](https://github.com/peterjohannmedina/codex-model-routing/actions/runs/38820830785).
 Subsequent workflow runs explicitly check out the PR head commit.
 The current fixture helper pins all eight production files, including the OTel adapter, to
-`d75f8e693f0f6bc501331ad8eb8b91a2190aca95` and verifies their Git blob IDs before
+`c786bbb14d5a5838e5922be983cef30af06a48ea` and verifies their Git blob IDs before
 capture. No replacement markup or altered production backend is used for images.
 
 The real backend serves temporary synthetic SQLite/config state on loopback to
