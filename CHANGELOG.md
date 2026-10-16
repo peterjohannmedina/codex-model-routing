@@ -2,6 +2,13 @@
 
 ## Unreleased — 2026-10-15
 
+- Add disabled-by-default automatic local Codex CLI 0.162.1 session pickup from
+  OTLP/HTTP JSON logs, with metadata filtering before storage, bounded authenticated
+  loopback ingestion and separate model-response usage to avoid exec double counts.
+- Add a read-only activation plan and explicit hash-approved user-config append,
+  private local capability, byte-preserving backup/undo and existing-exporter refusal.
+  Installation does not activate telemetry, start services or change hook trust.
+
 - Preserve authoritative Codex thread identity and known annotations across
   partial replay; distinguish authorization fragments from navigation anchors;
   preserve edits made while an earlier configuration snapshot is being saved.

@@ -18,3 +18,7 @@ __pycache__/
 *.dpapi
 usage.sqlite3*
 .dashboard-launch-*.html
+*.capability
+otel-config-before-*.toml
+otel-setup-receipt.json
+.otel-setup.lock

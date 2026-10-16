@@ -142,12 +142,15 @@ observation time rather than treating an old open flag as a heartbeat.
 
 ## Interactive CLI and ChatGPT app limits
 
-An arbitrary already-open TUI has no feed connected by this implementation.
+An arbitrary already-open TUI has no feed connected by default.
 Official [advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced)
 documents opt-in OTel log/metric export, including model/conversation metadata,
-API/stream/tool events and a prompt-redaction setting. That is a possible future
-explicit integration, not an enabled collector here. This release does not edit
-`config.toml`, enable OTel, attach app-server, or read session/internal archives.
+API/stream/tool events and a prompt-redaction setting. The optional
+[automatic session adapter](automatic-telemetry.md) accepts approved local OTel
+exports from new CLI 0.162.1 processes, with a metadata allowlist and separate
+response-usage totals. It is disabled by default. Installation does not edit
+`config.toml` or enable OTel; a separate exact-hash approval/apply step is needed.
+It never attaches unrelated app-server threads or reads session/internal archives.
 No verified official live export feed for the ChatGPT app was established;
 the page therefore labels it unsupported. An open app or terminal is not proof
 of observed usage.

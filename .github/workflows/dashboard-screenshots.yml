@@ -5,6 +5,7 @@ on:
       - 'assets/dashboard/**'
       - 'scripts/routing_dashboard.py'
       - 'scripts/routing_state.py'
+      - 'scripts/routing_otel.py'
       - 'tests/capture_dashboard.py'
       - 'tests/dashboard_screenshot_fixture.py'
       - 'tests/fixtures/dashboard-screenshot.json'
