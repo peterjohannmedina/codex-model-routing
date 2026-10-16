@@ -55,7 +55,7 @@ def load_fixture():
 
 
 class ScreenshotStore(dashboard.Store):
-    """Use the production backend; only the displayed observation clock is synthetic."""
+    """Use the production backend with generated catalog metadata and observation clock."""
     def __init__(self, root, fixture):
         super().__init__(root)
         self.fixture_clock = fixture['snapshot_time']

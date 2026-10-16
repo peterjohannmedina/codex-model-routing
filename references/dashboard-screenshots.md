@@ -1,6 +1,6 @@
 # Dashboard screenshots
 
-These checked-in images are actual browser screenshots of the initial dashboard release, rendered by
+These checked-in images are actual browser screenshots of the account-aware dashboard, rendered by
 official Playwright with Chromium on Ubuntu GitHub Actions. All activity and
 configuration values come from the committed [synthetic fixture](../tests/fixtures/dashboard-screenshot.json).
 They contain two dummy session UUIDs and eight dummy request UUIDs, no real
@@ -10,26 +10,25 @@ measured billed cost remains unavailable.
 
 | View | Description |
 | --- | --- |
-| [Overview](../docs/images/dashboard-overview.png) | Eight requests, four completed executions, separate evaluator/downstream usage, retained activity and labeled estimates |
-| [Providers](../docs/images/dashboard-providers.png) | Independent saved provider settings, historical observations, retention controls and environment variable names |
+| [Overview](../docs/images/dashboard-overview.png) | Optimize Codex heading and router mark, separate OTel and router counts, eight router records and four recorded completions |
+| [Providers](../docs/images/dashboard-providers.png) | Seven synthetic reported models, multi-select eligibility, unverified access labels, independent provider settings and retention controls |
 | [Activity](../docs/images/dashboard-activity.png) | Synthetic request history and an expanded local execution with correlation and usage evidence |
 
-The checked-in images show HTML, CSS, JavaScript and four Python backend/routing
-files from `f1423124e5cca1012ef7d64e6a44f2bc84fa703a`. They remain historical
-examples; newer wording is verified by subsequent capture artifacts.
+The checked-in images show ten production HTML, CSS, JavaScript, SVG and Python
+backend/routing files from reviewed implementation
+`c2fd067ca46e57d56bcadfb6d4e95a08f06856f6`.
 The [machine-readable provenance](../docs/images/dashboard-provenance.json)
 records exact capture commit, file/image SHA-256 hashes, browser/version,
-dimensions, locale and time zone. The checked-in images were captured from GitHub's
-temporary PR merge `042f7281709fe2413b8fd1795104449f4f6aaaac` for branch head
-`f79192c136774eb19e481aadf4d801b34b5843a5` by
-[this CI run](https://github.com/peterjohannmedina/codex-model-routing/actions/runs/38820830785).
-Subsequent workflow runs explicitly check out the PR head commit.
-The current fixture helper pins all eight production files, including the OTel adapter, to
-`0f1b6ccdbd93d1e47f5ad8a1bcdf0f7d363d8141` and verifies their Git blob IDs before
-capture. No replacement markup or altered production backend is used for images.
+dimensions, locale and time zone. The checked-in images were captured from PR head
+`0012b8bbac92bc28f75cc33c6e07fad399bb7889` by
+[this CI run](https://github.com/peterjohannmedina/codex-model-routing/actions/runs/38983254555).
+The fixture helper pins all ten production files, including the catalog reader and
+OTel adapter, and verifies their Git blob IDs before capture. No replacement markup
+or altered production backend is used for images.
 
 The real backend serves temporary synthetic SQLite/config state on loopback to
-a fresh browser context. Only the displayed observation clock and fixture dates
+a fresh browser context. The catalog is generated fixture metadata rather than a
+live account query. Only the displayed observation clock and fixture dates
 are fixed to October 15, 2026; retention uses the capture's current time so later
 runs retain the demo records. Browser requests are restricted to the dashboard
 origin and required read/auth routes. Provider transports are patched to fail if

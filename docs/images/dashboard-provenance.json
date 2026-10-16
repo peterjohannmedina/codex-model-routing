@@ -1,56 +1,68 @@
 {
   "synthetic": true,
-  "reviewed_source": "f1423124e5cca1012ef7d64e6a44f2bc84fa703a",
-  "capture_source_commit": "042f7281709fe2413b8fd1795104449f4f6aaaac",
-  "fixture_sha256": "b710bd069d8d08c8f46f96293a96878a7219f95b9160ea94c4648818bf500174",
+  "reviewed_source": "c2fd067ca46e57d56bcadfb6d4e95a08f06856f6",
+  "capture_source_commit": "0012b8bbac92bc28f75cc33c6e07fad399bb7889",
+  "fixture_sha256": "c3e1ca0a63e5a6d7dd3555b606219557e6053b0057e9f9ba0dcc2a73f7a767a9",
   "assets": {
     "assets/dashboard/index.html": {
-      "sha256": "76e28994af587634bb8a16e0206c3037a39b6f8f64c14ff77202b5afb51faa4f",
-      "reviewed_git_blob": "bb1b7bb63054445266d6614d2435146dc4dd5f6b"
+      "sha256": "01fd1ac938fb08d51eecdf519081bad6364de41fdc25967b70bace49376b6407",
+      "reviewed_git_blob": "a9960b3f8bdbc454ddae28ccc2f630e3d1ea4519"
     },
     "assets/dashboard/app.js": {
-      "sha256": "9a4d33b6833feba936e10717a230df1900cfe0f1195c525bf718ef91fba549e4",
-      "reviewed_git_blob": "93bc36b62cdb11e7a5eff52eac9e28575f99befe"
+      "sha256": "e651964d6845bd011d54ba86171a578042d814a5ba64105dcf53ce4b37b3fbb8",
+      "reviewed_git_blob": "6046a6d32b742647c3893427aea63ace362577b6"
     },
     "assets/dashboard/style.css": {
-      "sha256": "2be768134729cb2aa13a436d83fc7670e5d79f46c005df41d7c6b5d8b6209d3c",
-      "reviewed_git_blob": "6087cc41fd3897a479076ccc6c85c6c786ce23f8"
+      "sha256": "0ca1dd6a44eb2bcbb636bffc98df9e05c59794c63df33df7468de99f95c20ffd",
+      "reviewed_git_blob": "b14911924be433b177ec9826e9763d838f69d9c9"
+    },
+    "assets/dashboard/router-mark.svg": {
+      "sha256": "d6480c551bf9df5b897da85b7acbb497c4bca6782613cd6e452ee13fa5f2f28e",
+      "reviewed_git_blob": "26ccfb0cb47968c96187a1c9da5cf66f9b7122d1"
     },
     "scripts/routing_dashboard.py": {
-      "sha256": "769622c5b91bb420d014d270da0425fdab2313ccadd3e17ac63cf166860593a6",
-      "reviewed_git_blob": "3304374804243c997e627c3c94dc737ecc3cb9bd"
+      "sha256": "50450b7becbf29cebd3ebcef3f24d2fe38fcb6009fe3ef71f2aa0637a937fbd1",
+      "reviewed_git_blob": "48dca2d21402fa0aa890a4df2b8bcbe6c95faea0"
     },
     "scripts/routing_state.py": {
-      "sha256": "476333635d752811020cc9c67acd8d247108d6df1cb5b0542c363afb49173ba4",
-      "reviewed_git_blob": "6961b6c3a18c596750c3c35c0033dac3667f1b40"
+      "sha256": "d6b7086999f125af54bb6938a472ece3703b8517f830494cd6111042eea53629",
+      "reviewed_git_blob": "f2460eecdeeee0e947c839fbd6dc2105b09adfdc"
     },
     "scripts/routing_runtime.py": {
-      "sha256": "22520caa2eb14cd695c105eb54291f595fa294e11ea961f02d6e91e9b49a4ce5",
-      "reviewed_git_blob": "eb2a69397602d72af1160e8f0f55f50b8431c733"
+      "sha256": "7e8139edf5b05865fcf77a35eb95e6acc8ffd7b1758d0c87e0b4428b1363aee9",
+      "reviewed_git_blob": "abe3373719bedf69d969dc82c88fba4cf9c63a26"
     },
     "scripts/routing_decision.py": {
-      "sha256": "089fc4fda85e16603c7de909222f37ac1a17737bb2fdab8ec674a56b8ffba774",
-      "reviewed_git_blob": "5b1d1c36408c0c0a0cf69f962c8832a9d1bf3f4b"
+      "sha256": "f86d26d21c1245b005895e85f3145c4cd3e813df0d798c59c88a1a168d00e3a6",
+      "reviewed_git_blob": "377a977a68c210f8ca023b9a734bc81fc0fa22c7"
+    },
+    "scripts/routing_otel.py": {
+      "sha256": "ec8cfa06560eae9cab9e891f4659d486437936df339f59734390cc1c639a1ca4",
+      "reviewed_git_blob": "948c3a56a3d6771ff063fb86c00e5c2e08c7feb5"
+    },
+    "scripts/routing_catalog.py": {
+      "sha256": "f200599d672dccd9c10b66fc46f272b670e887702905f07ad7fe8a12cc8c91ab",
+      "reviewed_git_blob": "eac2155ea005ec18afe168d8fd7f4e8f639c4f21"
     }
   },
   "images": {
     "dashboard-overview.png": {
-      "sha256": "7218639b3b39a112fa0e85d456a2c3305047ce38dc1492f117f10e3819277888",
+      "sha256": "ebce1bddaffa4b98019d54b979ff4e53a71c0b68fe5b90062be956eabeff675d",
       "width": 1440,
-      "height": 864,
-      "bytes": 109217
+      "height": 1364,
+      "bytes": 199175
     },
     "dashboard-providers.png": {
-      "sha256": "f0f3d4494ffba647376df3bd48de593ed51e0d32af81073f94d9e22f9f3a542b",
+      "sha256": "1502efe9425a2b3c57ffd064b3a0a5e494d584bba0cda94454928c066f034aa4",
       "width": 1256,
-      "height": 913,
-      "bytes": 121494
+      "height": 1490,
+      "bytes": 226541
     },
     "dashboard-activity.png": {
-      "sha256": "6634041dc01b7db40e0803b868ce2e53fa0278d471ac55df0f6d1bc97a3f2634",
+      "sha256": "c499e4637abfd54176c7ec0bcf774ac4be41be5e6f0572fc0586da20a48364f4",
       "width": 1256,
       "height": 998,
-      "bytes": 111339
+      "bytes": 111685
     }
   },
   "playwright_version": "1.64.0",
@@ -65,11 +77,21 @@
     "GET /api/session",
     "GET /api/state",
     "GET /app.js",
+    "GET /router-mark.svg",
     "GET /style.css",
     "POST /api/auth"
   ],
   "provider_calls": 0,
   "external_browser_requests": 0,
   "real_user_data": false,
+  "browser_invalid_save_cases": [
+    "decisions-key-env:invalid_key_environment_name",
+    "decisions-key-env:missing_key_environment_name",
+    "local-key-env:invalid_key_environment_name"
+  ],
+  "configuration_posts": 0,
+  "credential_transmissions": 0,
+  "invalid_save_config_unchanged": true,
+  "browser_expansion_polling_regression": true,
   "note": "Real reviewed HTML/CSS/JS and backend; only generated fixtures and the displayed observation clock are synthetic. No image editing or UI DOM substitution."
 }

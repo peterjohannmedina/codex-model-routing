@@ -149,13 +149,13 @@ is required for the native baseline.
 
 *Actual dashboard rendered in Chromium with synthetic demo data. The values are
 illustrative; no provider calls, real account activity or measured bills were used.
-These images document the initial dashboard release.*
+These images show the account-aware model controls and observation labels.*
 See [capture provenance and reproduction steps](references/dashboard-screenshots.md).
 
 <details>
 <summary>Provider controls and activity screenshots (synthetic demo)</summary>
 
-![Dashboard provider controls showing independent Decisions and local LLM settings, historical observations, and local history retention controls.](docs/images/dashboard-providers.png)
+![Dashboard model controls with seven reported models and multi-select checkboxes, plus independent Decisions and local LLM settings.](docs/images/dashboard-providers.png)
 
 *Saved provider settings and historical observations. Saving settings does not
 run inference or grant spending permission.*
