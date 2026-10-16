@@ -77,7 +77,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   await nodes['config-form'].listeners.submit({preventDefault(){}});
   assert.match(nodes['save-status'].textContent,/Reload saved settings before retrying/);
   nextSaveIssue={error:'synthetic-private-unexpected-error',field:'synthetic-private-field'};
-  await nodes['config-form'].handlers.submit({preventDefault(){}});
+  await nodes['config-form'].listeners.submit({preventDefault(){}});
   assert.match(nodes['save-status'].textContent,/Could not confirm the save/);
   assert.doesNotMatch(nodes['save-status'].textContent,/synthetic-private|No settings were saved|Reload/);
   failNext=true;interval();await flush();
