@@ -36,7 +36,7 @@ function saveError(error) {
   if(error.code==='configuration_changed_reload_before_saving')return 'Settings changed in another tab or process. Reload saved settings before retrying.';
   const hint=Object.hasOwn(configHints,error.code)?configHints[error.code]:null;
   const label=Object.hasOwn(fieldLabels,error.field)?fieldLabels[error.field]:'Provider settings';
-  return hint?label+': '+hint:'Could not save settings. Check provider and history fields; keys are stored separately. No settings were saved.';
+  return hint?label+': '+hint:'Could not confirm the save. Check provider and history fields; keys are stored separately.';
 }
 function credentialIssue(config) {
   for(const group of ['decisions','local']) {
