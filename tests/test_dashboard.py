@@ -35,6 +35,13 @@ class LocalState(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def test_numeric_loopback_bind_never_resolves_host_dns(self):
+        server=object.__new__(dashboard.Server)
+        def bind_only(instance):instance.server_address=('127.0.0.1',49152)
+        with patch.object(dashboard.TCPServer,'server_bind',bind_only), patch('socket.getfqdn',side_effect=AssertionError('DNS forbidden')):
+            server.server_bind()
+        self.assertEqual((server.server_name,server.server_port),('localhost',49152))
+
     def test_dedup_late_usage_and_unknown_are_distinct_from_zero(self):
         item = event(stage=1)
         self.assertTrue(self.ledger.put(item))

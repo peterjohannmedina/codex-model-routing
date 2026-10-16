@@ -36,6 +36,7 @@ ERROR_HINTS={
     'install_skill_first':'Install the skill with the supported bootstrap first.',
     'state_must_be_outside_repository':'Choose a Codex home outside Git; private control state and backups must not be committed.',
 }
+_children={}
 
 
 def controller(paths, action='status'):
@@ -98,6 +99,10 @@ def stop(paths):
     deadline=time.monotonic()+5
     while paths.run.exists() and time.monotonic()<deadline:time.sleep(.05)
     if paths.run.exists():raise ValueError('receiver_stop_unconfirmed_no_process_was_killed')
+    child=_children.pop(current['instance_id'],None)
+    if child is not None:
+        try:child.wait(timeout=1)
+        except subprocess.TimeoutExpired:pass
     return {'stopped':True,'changed':True}
 
 
@@ -123,14 +128,19 @@ def start(paths, otel=None):
     ready=paths.service/'ready.json';ready.unlink(missing_ok=True)
     command=[installed['python'],'-B',str(paths.skill/'scripts/routing_bootstrap.py'),'_serve',
         '--user-root',str(paths.user),'--codex-home',str(paths.codex),'--instance-id',identity]
-    subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+    _children[identity]=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
                      cwd=str(paths.user),close_fds=True,**platform.detached())
     deadline=time.monotonic()+10
     while time.monotonic()<deadline:
         if ready.is_file():
             value=installation.read_json(ready)
             if value.get('instance_id')==identity:
-                if value.get('error'):raise ValueError('receiver_start_failed_see_status')
+                if value.get('error'):
+                    child=_children.pop(identity,None)
+                    if child is not None:
+                        try:child.wait(timeout=1)
+                        except subprocess.TimeoutExpired:pass
+                    raise ValueError('receiver_start_failed_see_status')
                 live=controller(paths)
                 if live:return {'running':True,'changed':True,**live}
         time.sleep(.05)

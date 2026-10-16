@@ -5,6 +5,7 @@ import hashlib
 import hmac
 from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 import json
 import os
 import re
@@ -151,6 +152,13 @@ class Store:
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
+    def server_bind(self):
+        # HTTPServer's getfqdn() can stall on host DNS. This listener is always
+        # numeric loopback and needs no hostname resolution or network lookup.
+        TCPServer.server_bind(self)
+        self.server_name = 'localhost'
+        self.server_port = self.server_address[1]
+
     def __init__(self, port, store, otel_capability=None, control_capability=None, instance_id=None, revision=None):
         self.store = store
         self.otel_capability = otel.capability(otel_capability) if otel_capability is not None else None
