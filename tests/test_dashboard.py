@@ -42,6 +42,21 @@ class LocalState(unittest.TestCase):
             server.server_bind()
         self.assertEqual((server.server_name,server.server_port),('localhost',49152))
 
+    def test_receiver_diagnostics_persist_only_fixed_counters_without_socket(self):
+        store=dashboard.Store(self.root)
+        server=object.__new__(dashboard.Server)
+        server.store=store;server.otel_lock=threading.Lock();server.last_status_write=0
+        server.record_otel(received=True,validated_batches=1,unsupported_version_records=2)
+        persisted=json.loads((self.root/'receiver-status.json').read_text())
+        self.assertEqual(persisted['unsupported_version_records'],2)
+        self.assertEqual(persisted['accepted_records'],0)
+        self.assertIsNone(persisted['last_observation_at'])
+        self.assertEqual(persisted['supported_cli_versions'],['0.162.1','0.163.0'])
+        self.assertEqual(store.snapshot()['sessions'],[])
+        for private in ('conversation.id','session_id','capability','headers','prompt','body',str(self.root)):
+            self.assertNotIn(private,json.dumps(persisted))
+        with self.assertRaises(ValueError):server.record_otel(unknown_counter=1)
+
     def test_dedup_late_usage_and_unknown_are_distinct_from_zero(self):
         item = event(stage=1)
         self.assertTrue(self.ledger.put(item))

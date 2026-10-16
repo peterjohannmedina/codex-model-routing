@@ -24,6 +24,13 @@ import routing_otel as otel
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/dashboard'
 
+
+def package_version():
+    try:
+        value = (ASSETS.parents[1] / 'VERSION').read_text(encoding='ascii').strip()
+        return value if re.fullmatch(r'[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{1,3}', value) else 'unverified'
+    except (OSError, UnicodeError): return 'unverified'
+
 CONFIG_HINTS = {
     'invalid_key_environment_name': 'Enter an environment-variable name such as OPENAI_API_KEY, not an API key value.',
     'missing_key_environment_name': 'Enter OPENAI_API_KEY or another environment-variable name; store the key separately.',
@@ -104,8 +111,29 @@ class Store:
             raise ValueError('state_must_be_outside_repository')
         self.path = self.root / 'config.json'
         self.lock = threading.Lock()
-        self.otel_status = {'enabled': False, 'last_received_at': None, 'accepted_records': 0,
-                            'ignored_records': 0, 'rejected_records': 0, 'exporter_configuration': 'unverified'}
+        self.otel_status = {'enabled': False, 'last_received_at': None, 'last_observation_at': None,
+            'accepted_records': 0, 'ignored_records': 0, 'rejected_records': 0,
+            'requests': 0, 'unauthorized_requests': 0, 'invalid_batches': 0, 'storage_errors': 0,
+            'validated_batches': 0, 'recording_disabled_batches': 0,
+            **{reason + '_records': 0 for reason in otel.IGNORE_REASONS},
+            'supported_cli_versions': list(otel.SUPPORTED_VERSIONS), 'exporter_configuration': 'unverified',
+            'runtime_version': package_version(),
+            'started_at': state.dt.datetime.now(state.dt.timezone.utc).isoformat(),
+            'state_id': hashlib.sha256(str(self.root).encode()).hexdigest()[:12]}
+
+    def write_receiver_status(self):
+        """Fixed metadata/counters only; never raw export data, IDs or capabilities."""
+        path = self.root / 'receiver-status.json'
+        try:
+            if path.is_symlink() or (path.exists() and getattr(path.lstat(), 'st_file_attributes', 0) & 0x400): return
+            self.root.mkdir(parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(prefix='.receiver-status-', dir=self.root)
+            try:
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+                    json.dump({'schema_version': 1, 'kind': 'routing_receiver', **self.otel_status}, stream)
+                os.replace(name, path)
+            finally: Path(name).unlink(missing_ok=True)
+        except OSError: pass  # Diagnostics never turn accepted ingestion into failure.
 
     def config(self):
         config = safe_config(core.load_file(self.path)) if self.path.is_file() else safe_config({'schema_version': 1})
@@ -177,6 +205,24 @@ class Server(ThreadingHTTPServer):
         super().__init__(('127.0.0.1', port), Handler)
         self.origin = 'http://127.0.0.1:' + str(self.server_port)
         self.cookie_name = 'routing_' + str(self.server_port)
+        self.last_status_write = 0
+        self.record_otel()
+
+    def record_otel(self, received=False, observed=False, **increments):
+        with self.otel_lock:
+            status = self.store.otel_status
+            for name, amount in increments.items():
+                if name not in status or type(status[name]) is not int or type(amount) is not int:
+                    raise ValueError('invalid_receiver_counter')
+                status[name] += amount
+            if received: status['last_received_at'] = state.dt.datetime.now(state.dt.timezone.utc).isoformat()
+            if observed: status['last_observation_at'] = status['last_received_at']
+            # Bound writes for unauthenticated or invalid request bursts. The
+            # authenticated UI always reads current in-memory counters.
+            now = time.monotonic()
+            if received or now - self.last_status_write >= 1:
+                self.store.write_receiver_status()
+                self.last_status_write = now
 
     def create_launch_file(self):
         self.store.root.mkdir(parents=True, exist_ok=True)
@@ -363,6 +409,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {'error': 'invalid_lifecycle_request'})
 
     def otel_logs(self):
+        self.server.record_otel(requests=1)
         secret = self.server.otel_capability
         if secret is None: return self.reply(404, {'error': 'not_found'})
         # Dedicated native exporter capability; browser cookie/CSRF never grants
@@ -371,29 +418,38 @@ class Handler(BaseHTTPRequestHandler):
                 or len(self.headers.get_all(otel.HEADER, [])) != 1
                 or not hmac.compare_digest(self.headers.get(otel.HEADER, '').encode('utf-8'), secret.encode('ascii'))
                 or self.headers.get('Origin') is not None or self.headers.get('Sec-Fetch-Site') is not None):
+            self.server.record_otel(unauthorized_requests=1)
             return self.reply(403, {'error': 'forbidden_exporter'})
         if (self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding')
                 or self.headers.get('Transfer-Encoding')):
+            self.server.record_otel(invalid_batches=1)
             return self.reply(415, {'error': 'uncompressed_json_required'})
         try:
             if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
             length = int(self.headers['Content-Length'])
-            if not 1 <= length <= otel.MAX_BYTES: return self.reply(413, {'error': 'body_too_large'})
+            if not 1 <= length <= otel.MAX_BYTES:
+                self.server.record_otel(invalid_batches=1)
+                return self.reply(413, {'error': 'body_too_large'})
             raw = self.rfile.read(length)
             if len(raw) != length: raise ValueError()
             config, _ = self.server.store.config()
             settings = state.LedgerSettings.parse(config['observability'])
             if settings.enabled:
-                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings))
-                with self.server.otel_lock:
-                    status = self.server.store.otel_status
-                    status['last_received_at'] = state.dt.datetime.now(state.dt.timezone.utc).isoformat()
-                    for field in ('accepted', 'ignored', 'rejected'): status[field + '_records'] += counts[field]
+                diagnostics = {}
+                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings), diagnostics)
+                self.server.record_otel(received=True, observed=counts['accepted'] > 0, validated_batches=1,
+                    **{field + '_records': amount for field, amount in counts.items()},
+                    **{reason + '_records': amount for reason, amount in diagnostics.items()})
+            else:
+                otel.decode(raw)
+                self.server.record_otel(received=True, validated_batches=1, recording_disabled_batches=1)
             # Empty OTLP ExportLogsServiceResponse; never echo raw records.
             return self.reply(200, {})
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
+            self.server.record_otel(invalid_batches=1)
             return self.reply(400, {'error': 'invalid_otlp_logs'})
         except (OSError, state.sqlite3.Error):
+            self.server.record_otel(storage_errors=1)
             return self.reply(503, {'error': 'storage_unavailable'})
 
 

@@ -1,4 +1,4 @@
-"""Metadata-only adapter for Codex 0.162.1 OTLP/HTTP JSON log export.
+"""Metadata-only adapter for reviewed Codex OTLP/HTTP JSON log contracts.
 
 Raw records exist in bounded request memory only. Never log or persist them.
 Session configuration and model-response observations are separate from exec turns.
@@ -12,7 +12,8 @@ import routing_state as state
 
 MAX_BYTES = 1048576
 MAX_RECORDS = 512
-SUPPORTED_VERSION = '0.162.1'
+SUPPORTED_VERSIONS = ('0.162.1', '0.163.0')
+IGNORE_REASONS = ('unsupported_version', 'unsupported_event', 'non_usage_response')
 HEADER = 'X-Routing-OTel'
 
 
@@ -53,12 +54,15 @@ def token_count(value):
     return state.count(value)
 
 
-def metadata(record):
+def metadata(record, diagnostics=None):
+    def ignore(reason):
+        if diagnostics is not None: diagnostics[reason] = diagnostics.get(reason, 0) + 1
+        return None
     if not isinstance(record, dict): raise ValueError('invalid_record')
     attrs = attributes(record)
-    if attrs.get('app.version') != SUPPORTED_VERSION: return None
+    if attrs.get('app.version') not in SUPPORTED_VERSIONS: return ignore('unsupported_version')
     name = attrs.get('event.name')
-    if name not in ('codex.conversation_starts', 'codex.sse_event'): return None
+    if name not in ('codex.conversation_starts', 'codex.sse_event'): return ignore('unsupported_event')
     session = state.identifier(attrs.get('conversation.id'), allow_unassigned=False)
     event = {'source': 'codex_otel', 'session_id': session, 'session_source': 'codex_thread',
              'stage': 2, 'adapter': 'native', 'model': state.label(attrs.get('model')),
@@ -68,10 +72,10 @@ def metadata(record):
         event.update(mode='otel_session', model_source='startup_configuration',
                      execution_status='session_observed', effort=state.label(attrs.get('reasoning_effort')))
     else:
-        if attrs.get('event.kind') != 'response.completed' or 'error.message' in attrs: return None
+        if attrs.get('event.kind') != 'response.completed' or 'error.message' in attrs: return ignore('non_usage_response')
         # The same source also emits a generic SSE notification without usage.
         # Ignore it rather than counting one response twice.
-        if not {'input_token_count', 'output_token_count'} & attrs.keys(): return None
+        if not {'input_token_count', 'output_token_count'} & attrs.keys(): return ignore('non_usage_response')
         nano = record.get('timeUnixNano')
         clock = 'source'
         # Codex's OpenTelemetry 0.31 tracing bridge does not set event time.
@@ -134,13 +138,13 @@ def decode(raw):
     return records(json.loads(raw.decode('utf-8'), object_pairs_hook=unique, parse_constant=invalid))
 
 
-def ingest(raw, ledger):
+def ingest(raw, ledger, diagnostics=None):
     items = decode(raw)
     accepted = ignored = rejected = 0
     # Fully normalize before any write. Exceptions never include raw values.
     events = []
     for item in items:
-        try: event = metadata(item)
+        try: event = metadata(item, diagnostics)
         except (ValueError, TypeError, OverflowError, OSError):
             rejected += 1
             continue

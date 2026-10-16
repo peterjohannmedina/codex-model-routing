@@ -88,9 +88,19 @@ class OTelMetadata(unittest.TestCase):
     def test_ignore_generic_completion_errors_and_unknown_version(self):
         generic=record();generic['attributes']=[a for a in generic['attributes'] if a['key'] not in ('input_token_count','output_token_count')]
         error=record(**{'error.message':'synthetic-private-error'})
-        changed=record(**{'app.version':'0.163.0'})
+        changed=record(**{'app.version':'0.163.1'})
         self.assertEqual(otel.ingest(payload(generic,error,changed),self.ledger)['ignored'],3)
         self.assertEqual(self.ledger.snapshot(),[])
+
+    def test_reviewed_0163_contract_and_fixed_ignore_diagnostics(self):
+        diagnostics={}
+        result=otel.ingest(payload(record('start',**{'app.version':'0.163.0'}),
+            record(**{'app.version':'0.163.0'}),record(**{'app.version':'synthetic-secret-never-store'}),
+            record(**{'event.name':'synthetic-private-event'}),record(**{'event.kind':'response.failed'})),self.ledger,diagnostics)
+        self.assertEqual(result,{'accepted':2,'ignored':3,'rejected':0})
+        self.assertEqual(diagnostics,{'unsupported_version':1,'unsupported_event':1,'non_usage_response':1})
+        self.assertEqual(state.totals(self.ledger.snapshot())['otel']['responses'],1)
+        self.assertNotIn('synthetic-',json.dumps(diagnostics)+json.dumps(self.ledger.snapshot()))
 
     def test_new_resume_model_effort_and_interrupt_observations(self):
         otel.ingest(payload(record('start')),self.ledger)
@@ -335,8 +345,13 @@ class OTelHTTP(unittest.TestCase):
         response=connection.getresponse();snapshot=json.loads(response.read());connection.close()
         self.assertTrue(snapshot['otel_receiver']['enabled'])
         self.assertEqual(snapshot['otel_receiver']['accepted_records'],2)
+        self.assertEqual(snapshot['otel_receiver']['validated_batches'],1)
+        self.assertGreaterEqual(snapshot['otel_receiver']['unauthorized_requests'],4)
         self.assertEqual(snapshot['totals']['otel']['responses'],1)
         self.assertNotIn(TOKEN,json.dumps(snapshot))
+        persisted=json.loads((self.store.root/'receiver-status.json').read_text())
+        self.assertEqual(persisted['accepted_records'],2)
+        self.assertNotIn(TOKEN,json.dumps(persisted));self.assertNotIn(SESSION,json.dumps(persisted))
         self.server.otel_capability=None
         self.assertEqual(self.request()[0],404)
 
@@ -345,7 +360,18 @@ class OTelHTTP(unittest.TestCase):
         self.store.save(config,version)
         self.assertEqual(self.request()[0],200)
         self.assertEqual(state.Ledger(self.store.root).snapshot(),[])
-        self.assertIsNone(self.store.otel_status['last_received_at'])
+        self.assertIsNotNone(self.store.otel_status['last_received_at'])
+        self.assertIsNone(self.store.otel_status['last_observation_at'])
+        self.assertEqual(self.store.otel_status['recording_disabled_batches'],1)
+
+    def test_version_mismatch_is_visible_without_fabricating_sessions(self):
+        self.assertEqual(self.request(raw=payload(record(**{'app.version':'0.163.1'})))[0],200)
+        self.assertEqual(self.store.otel_status['unsupported_version_records'],1)
+        self.assertIsNone(self.store.otel_status['last_observation_at'])
+        self.assertEqual(self.store.snapshot()['sessions'],[])
+        self.assertEqual(self.request(raw=payload(record('start',**{'app.version':'0.163.0'})))[0],200)
+        self.assertEqual(self.store.otel_status['accepted_records'],1)
+        self.assertEqual(self.store.snapshot()['sessions'],[SESSION])
 
 
 if __name__=='__main__': unittest.main()

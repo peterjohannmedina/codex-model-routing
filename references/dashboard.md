@@ -151,7 +151,7 @@ Official [advanced configuration](https://learn.chatgpt.com/docs/config-file/con
 documents opt-in OTel log/metric export, including model/conversation metadata,
 API/stream/tool events and a prompt-redaction setting. The optional
 [automatic session adapter](automatic-telemetry.md) accepts approved local OTel
-exports from new CLI 0.162.1 processes, with a metadata allowlist and separate
+exports from reviewed CLI 0.162.1 and 0.163.0 processes, with a metadata allowlist and separate
 response-usage totals. It is disabled by default. Installation does not edit
 `config.toml` or enable OTel; a separate exact-hash approval/apply step is needed.
 It never attaches unrelated app-server threads or reads session/internal archives.

@@ -193,7 +193,7 @@ the ChatGPT app are unobserved. A recommendation does not switch a running CLI
 model or prove execution. See [setup, privacy and supported sources](references/dashboard.md)
 and the [dashboard requirements](references/dashboard-prd.md).
 
-New local Codex CLI 0.162.1 sessions can also appear automatically through an
+New local Codex CLI 0.162.1 and 0.163.0 sessions can also appear automatically through an
 explicitly approved user-level OTel exporter. The local receiver retains only
 allowlisted metadata and shows startup settings and model-response usage separately
 from exec-turn totals. It is disabled by default; installation does not enable it

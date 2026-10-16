@@ -78,7 +78,7 @@ def plan(home, port=8765):
             'config': str(home / 'config.toml'), 'state_dir': str(root),
             'endpoint': 'http://127.0.0.1:' + str(port) + '/v1/logs',
             'protocol': 'json', 'local_capability_file': str(root / 'otel-receiver.capability'),
-            'accepted_codex_versions': [otel.SUPPORTED_VERSION],
+            'accepted_codex_versions': list(otel.SUPPORTED_VERSIONS),
             'privacy': {'log_user_prompt': False, 'log_agent_responses': False,
                         'log_guardian_assessments': False, 'tool_result_max_bytes': 0},
             'preserved': ['existing config bytes', 'profiles', 'hooks', 'analytics', 'metrics/trace exporters',
@@ -150,7 +150,7 @@ def apply_locked(home, approved_sha, port=8765):
         atomic(token_path, (token + '\n').encode('ascii'))
         receipt = {'config': str(path), 'backup': str(backup), 'before_sha256': sha(original),
                    'after_sha256': sha(updated), 'config_existed': existed, 'capability_sha256': sha((token + '\n').encode()),
-                   'endpoint': prepared['endpoint'], 'protocol_version': otel.SUPPORTED_VERSION}
+                   'endpoint': prepared['endpoint'], 'accepted_codex_versions': list(otel.SUPPORTED_VERSIONS)}
         atomic(receipt_path, (json.dumps(receipt, indent=2) + '\n').encode())
         if sha(read_config(path)[0]) != approved_sha: raise ValueError('configuration_changed_replan')
         if not private_permissions(path.parent, path, root): raise ValueError('configuration_permissions_not_private_or_unverified')
