@@ -1,6 +1,6 @@
 # Dashboard screenshots
 
-These are actual browser screenshots of the initial dashboard release, rendered by
+These checked-in images are actual browser screenshots of the initial dashboard release, rendered by
 official Playwright with Chromium on Ubuntu GitHub Actions. All activity and
 configuration values come from the committed [synthetic fixture](../tests/fixtures/dashboard-screenshot.json).
 They contain two dummy session UUIDs and eight dummy request UUIDs, no real
@@ -14,19 +14,19 @@ measured billed cost remains unavailable.
 | [Providers](../docs/images/dashboard-providers.png) | Independent saved provider settings, historical observations, retention controls and environment variable names |
 | [Activity](../docs/images/dashboard-activity.png) | Synthetic request history and an expanded local execution with correlation and usage evidence |
 
-The captured HTML, CSS, JavaScript and four Python backend/routing files matched
-commit `f1423124e5cca1012ef7d64e6a44f2bc84fa703a`; the fixture helper verifies
-their pinned Git blob IDs before capture. No production UI or backend changes
-were made for the images. The [machine-readable provenance](../docs/images/dashboard-provenance.json)
+The checked-in images show HTML, CSS, JavaScript and four Python backend/routing
+files from `f1423124e5cca1012ef7d64e6a44f2bc84fa703a`. They remain historical
+examples; newer wording is verified by subsequent capture artifacts.
+The [machine-readable provenance](../docs/images/dashboard-provenance.json)
 records exact capture commit, file/image SHA-256 hashes, browser/version,
 dimensions, locale and time zone. The checked-in images were captured from GitHub's
 temporary PR merge `042f7281709fe2413b8fd1795104449f4f6aaaac` for branch head
 `f79192c136774eb19e481aadf4d801b34b5843a5` by
 [this CI run](https://github.com/peterjohannmedina/codex-model-routing/actions/runs/38820830785).
-Subsequent workflow runs explicitly check out the PR head commit. The automatic
-telemetry iteration adds a new panel; current CI captures verify its frozen
-source `2a83a6d6fc496903f539ef3e5566cb7fc760a1df`, including the new OTel adapter.
-The checked-in PNGs and their original provenance remain historical examples.
+Subsequent workflow runs explicitly check out the PR head commit.
+The current fixture helper pins all eight production files, including the OTel adapter, to
+`9e588ca76e9ba9fcf46f1c09fa780742e8996eb0` and verifies their Git blob IDs before
+capture. No replacement markup or altered production backend is used for images.
 
 The real backend serves temporary synthetic SQLite/config state on loopback to
 a fresh browser context. Only the displayed observation clock and fixture dates
@@ -38,6 +38,12 @@ JavaScript errors. Private bootstrap state remains in memory and is never
 included in artifacts. No traces, HAR files, browser profiles, storage exports or
 temporary database files are uploaded. Screenshots use browser capture bounds;
 there is no image editing or replacement UI markup.
+The same Chromium run clicks Save with synthetic credential values and a missing
+Decisions name. Native validation must show fixed hints and `aria-invalid`, clear
+on correction, transmit no configuration or credential value, and leave the
+synthetic config unchanged. These checks run after the Providers screenshot;
+synthetic credential inputs are never included in captured images. Provenance
+records case identifiers and zero transmission/write results without input values.
 
 ## Reproduce
 

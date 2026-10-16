@@ -40,6 +40,8 @@ def main(argv=None):
             thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
             thread.start()
             blocked, paths, errors, provider_attempts = [], set(), [], []
+            config_posts, credential_transmissions, invalid_save_checks = [], [], []
+            synthetic_keys = ('sk-synthetic-decisions-do-not-transmit', 'sk-synthetic-local-do-not-transmit')
             def forbidden_provider(*_args, **_kwargs):
                 provider_attempts.append(True)
                 raise AssertionError('providers_are_forbidden_in_capture')
@@ -55,6 +57,11 @@ def main(argv=None):
                         request = route.request
                         parsed = urlsplit(request.url)
                         method, path = request.method, parsed.path
+                        if method == 'POST' and path == '/api/config': config_posts.append(True)
+                        if any(key in request.url or key in (request.post_data or '') for key in synthetic_keys):
+                            credential_transmissions.append(True)
+                            route.abort()
+                            return
                         allowed = ((method == 'GET' and path in ('/', '/app.js', '/style.css', '/favicon.ico', '/api/session', '/api/state'))
                                    or (method == 'POST' and path == '/api/auth'))
                         if parsed.scheme != 'http' or parsed.netloc != urlsplit(server.origin).netloc or not allowed:
@@ -73,7 +80,9 @@ def main(argv=None):
                     page.goto(server.origin + '/#authorize=' + server.bootstrap, wait_until='domcontentloaded')
                     expect(page.locator('#requests')).to_have_text('8')
                     expect(page.locator('#executions')).to_have_text('4')
-                    expect(page.locator('#connection')).to_have_text('Dashboard live · 2s')
+                    expect(page.locator('#connection')).to_have_text('Dashboard connected · 2s')
+                    expect(page.locator('#otel-receiver')).to_have_text('Receiver disabled')
+                    expect(page.locator('#otel-summary')).to_contain_text('0 sessions with retained OTel metadata; 0 model-response observations.')
                     expect(page).to_have_url(server.origin + '/')
                     expect(page.locator('#message')).to_be_empty()
                     expect(page.locator('#save')).to_be_enabled()
@@ -96,6 +105,31 @@ def main(argv=None):
                     expect(page.locator('#local-model')).to_have_value('synthetic-local-model')
                     page.locator('#providers').screenshot(path=str(output / 'dashboard-providers.png'), animations='disabled')
 
+                    stage = 'native-invalid-save-regression'
+                    original_config = store.path.read_bytes()
+                    cases = [('decisions-key-env', synthetic_keys[0], 'OPENAI_API_KEY', 'invalid_key_environment_name'),
+                             ('decisions-key-env', '', 'OPENAI_API_KEY', 'missing_key_environment_name'),
+                             ('local-key-env', synthetic_keys[1], 'LOCAL_LLM_API_KEY', 'invalid_key_environment_name')]
+                    for field, value, corrected, code in cases:
+                        control = page.locator('#' + field)
+                        control.fill(value)
+                        # An actual button click exercises native required/pattern
+                        # validation, which fires invalid without firing submit.
+                        page.locator('#save').click()
+                        expect(control).to_have_attribute('aria-invalid', 'true')
+                        expect(page.locator('#save-status')).to_contain_text(dashboard.CONFIG_HINTS[code])
+                        assert control.evaluate('(node) => node.validationMessage') == dashboard.CONFIG_HINTS[code]
+                        displayed = page.locator('#save-status').inner_text()
+                        assert all(key not in displayed for key in synthetic_keys)
+                        assert not config_posts and not credential_transmissions
+                        assert store.path.read_bytes() == original_config
+                        control.fill(corrected)
+                        expect(control).to_have_attribute('aria-invalid', 'false')
+                        assert control.evaluate('(node) => node.validationMessage') == ''
+                        assert control.evaluate('(node) => node.checkValidity()')
+                        invalid_save_checks.append(field + ':' + code)
+                    assert page.locator('#config-form').evaluate('(node) => node.checkValidity()')
+
                     stage = 'activity-navigation-refresh'
                     page.get_by_role('link', name='Activity', exact=True).click()
                     page.reload(wait_until='domcontentloaded')
@@ -104,6 +138,7 @@ def main(argv=None):
                     page.locator('#events details').first.locator('summary').click()
                     page.locator('#activity').screenshot(path=str(output / 'dashboard-activity.png'), animations='disabled')
                     assert not blocked and not errors and not provider_attempts
+                    assert not config_posts and not credential_transmissions
                     browser_version = browser.version
                     context.close()
                     browser.close()
@@ -125,6 +160,8 @@ def main(argv=None):
             'locale': 'en-US', 'timezone': 'UTC', 'device_scale_factor': 1, 'viewport_width': 1440,
             'fixture_clock': fixture['snapshot_time'], 'network_paths': sorted(paths),
             'provider_calls': 0, 'external_browser_requests': 0, 'real_user_data': False,
+            'browser_invalid_save_cases': invalid_save_checks, 'configuration_posts': len(config_posts),
+            'credential_transmissions': len(credential_transmissions), 'invalid_save_config_unchanged': True,
             'note': 'Real reviewed HTML/CSS/JS and backend; only generated fixtures and the displayed observation clock are synthetic. No image editing or UI DOM substitution.'}
         (output / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
         print(json.dumps({'captured': list(images), 'reviewed_source': REVIEWED_SOURCE, 'provider_calls': 0}))

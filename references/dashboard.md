@@ -61,6 +61,10 @@ the server writes the validated config atomically. The environment-variable
 fields accept **names only**. There is no key-value form, credential endpoint or
 credential-presence probe. URL credentials, query strings and fragments are
 rejected. Treat model IDs and endpoint paths as nonsecret configuration.
+Field-specific errors offer fixed correction hints; only version conflicts ask
+for a reload. See [credential-save troubleshooting](dashboard-credential-save.md).
+The connection label reports browser access to the ledger; session rows are
+retained observations and do not prove an active feed.
 
 An enabled provider is different from an observed provider. Availability shown
 in the page is a timestamped historical routing observation. It is not an active

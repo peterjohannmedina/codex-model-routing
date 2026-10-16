@@ -7,6 +7,7 @@ class Element{
   constructor(type=''){this.type=type;this.value='';this.checked=false;this.children=[];this.listeners={};this.textContent='';}
   append(...items){this.children.push(...items);}replaceChildren(...items){this.children=items;}
   setAttribute(){}addEventListener(kind,fn){this.listeners[kind]=fn;}
+  setCustomValidity(value){this.validationMessage=value;}
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function boot(hash,delaySave=false){
@@ -42,7 +43,7 @@ async function anchors(){
     assert.equal(ui.calls.filter(c=>c.url==='/api/auth').length,0,'navigation was treated as bootstrap');
     assert.equal(ui.nodes.requests.textContent,'0','stored authorized session was not recovered');
     assert.equal(ui.historyChanges.length,0,'navigation anchor was discarded');
-    ui.poll();await flush();assert.match(ui.nodes.connection.textContent,/Dashboard live/);
+    ui.poll();await flush();assert.match(ui.nodes.connection.textContent,/Dashboard connected/);
   }
   const expired=boot('#authorize=expired-nonce');await flush();await flush();
   assert.equal(expired.nodes.requests.textContent,'0','failed bootstrap discarded a valid stored capability');
