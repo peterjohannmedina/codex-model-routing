@@ -10,14 +10,14 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import routing_dashboard as dashboard
 import routing_state as state
 
-REVIEWED_SOURCE = '80f73615240f4a8b040827b85fe56c2034209631'
+REVIEWED_SOURCE = 'a8655343927020425750bfff79e857453cdf7f41'
 FIXTURE = ROOT / 'tests/fixtures/dashboard-screenshot.json'
 # Git blob IDs from REVIEWED_SOURCE; no history fetch is needed in shallow CI.
 REVIEWED_FILES = {
     'assets/dashboard/index.html': '1a46619a3bcb7c4c91394ff0edf5f814a12f0717',
-    'assets/dashboard/app.js': 'c1187c036a7e8417a9ab9705819f4f55454c0943',
+    'assets/dashboard/app.js': '9f1954293d2328258532cbdf253b95d2ba52d405',
     'assets/dashboard/style.css': '6087cc41fd3897a479076ccc6c85c6c786ce23f8',
-    'scripts/routing_dashboard.py': '5d9feaeb9077c722b0d28708e52c6e746ca39d22',
+    'scripts/routing_dashboard.py': 'cc5048bf17c05e6412051c0b920e69851f482c41',
     'scripts/routing_state.py': '2c52da185d002be196e0cdd59af911c2b408b4cb',
     'scripts/routing_runtime.py': 'eb2a69397602d72af1160e8f0f55f50b8431c733',
     'scripts/routing_decision.py': '5b1d1c36408c0c0a0cf69f962c8832a9d1bf3f4b',
