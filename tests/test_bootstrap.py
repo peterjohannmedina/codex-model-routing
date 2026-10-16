@@ -113,6 +113,44 @@ class InstallTransactions(Fixture):
         with self.assertRaises(ValueError):installation.rollback(self.paths)
         self.assertEqual(installation.receipt(self.paths)['version'],'2099.2')
 
+    def test_rollback_refuses_recreated_removed_package_path_before_any_changes(self):
+        source=self.archive();retired=source/'scripts/retired_fixture.py'
+        retired.write_bytes(b'old release bytes');self.install(source)
+        original=(self.paths.skill/'README.md').read_bytes()
+        retired.unlink();(source/'README.md').write_bytes(original+b'new release bytes')
+        self.install(source)
+        recreated=self.paths.skill/'scripts/retired_fixture.py'
+        self.assertFalse(recreated.exists());recreated.write_bytes(b'user-created bytes after update')
+        before=self.paths.receipt.read_bytes()
+        with self.assertRaisesRegex(ValueError,'recreated_path_rollback_refused'):
+            installation.rollback(self.paths)
+        self.assertEqual(recreated.read_bytes(),b'user-created bytes after update')
+        self.assertEqual(self.paths.receipt.read_bytes(),before)
+        self.assertEqual((self.paths.skill/'README.md').read_bytes(),original+b'new release bytes')
+        recreated.unlink();self.assertTrue(installation.rollback(self.paths)['rolled_back'])
+        self.assertEqual(recreated.read_bytes(),b'old release bytes')
+
+    def test_unchanged_owned_launchers_refresh_after_interpreter_change(self):
+        self.install(shortcuts=True,login=True)
+        before=installation.receipt(self.paths)
+        bodies={name:Path(name).read_bytes() for name in before['shortcut_files']}
+        # The alternate interpreter is only a launcher target, never executed.
+        alternate=str(self.root/'alternate python'/'python.exe')
+        with patch.object(installation.sys,'executable',alternate):
+            result=self.install()
+            self.assertTrue(result['changed']);self.assertTrue(result['login_startup_configured'])
+            self.assertFalse(self.install()['changed'])
+        installed=installation.receipt(self.paths)
+        self.assertEqual(installed['python'],alternate)
+        self.assertTrue(all(Path(name).read_bytes()!=body for name,body in bodies.items()))
+        for path,kind,body in platform.launcher_specs(self.user,self.paths.codex,alternate,True,True):
+            self.assertEqual(installed['shortcut_specs'][str(path.absolute())],installation.shortcut_spec(kind,body))
+        # Edits still win over an interpreter change, and startup is not claimed.
+        login_path=platform.launcher_specs(self.user,self.paths.codex,alternate,False,True)[0][0]
+        login_path.write_bytes(b'personal launcher edit')
+        self.assertFalse(self.install()['login_startup_configured'])
+        self.assertEqual(login_path.read_bytes(),b'personal launcher edit')
+
     def test_shortcuts_and_login_are_explicit_fixture_only_and_removed(self):
         self.install(shortcuts=True,login=True)
         receipt=installation.receipt(self.paths)

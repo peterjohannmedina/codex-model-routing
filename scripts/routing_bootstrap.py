@@ -23,6 +23,7 @@ import routing_installation as installation
 import routing_platform as platform
 
 ERROR_HINTS={
+    'recreated_path_rollback_refused':'A removed package path now contains new content. Preserve or move it before retrying rollback; no package files were restored.',
     'owned_package_changed_use_repair_after_review':'Owned package files changed. Review them, then use repair; a private backup is kept.',
     'owned_files_changed_review_then_repair':'Package integrity check failed. Review local edits before repair.',
     'existing_unmanaged_skill_requires_review':'An unmanaged skill exists. Review it before explicitly choosing --adopt-existing; it will be backed up.',

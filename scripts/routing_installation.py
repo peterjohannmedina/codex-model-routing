@@ -146,6 +146,10 @@ def shortcut_allowed(paths, installed):
     return {str(path.absolute()) for path, _kind, _body in platform.launcher_specs(paths.user, paths.codex, installed['python'], True, True)}
 
 
+def shortcut_spec(kind, body):
+    return sha(encoded([kind, body.hex() if isinstance(body, bytes) else body]))
+
+
 def install(paths, source=SOURCE, repair=False, shortcuts=None, login=None, port=None, adopt=False, plan_only=False):
     before = receipt(paths)
     raw = source_files(source)
@@ -175,7 +179,8 @@ def install(paths, source=SOURCE, repair=False, shortcuts=None, login=None, port
                'user_root':str(paths.user),'python':sys.executable,'port':port if port is not None else (before or {}).get('port',8765),
                'files':{name:sha(body) for name,body in planned.items() if name.startswith(str(SKILL))},'preserved_user_files':preserved,
                'shortcuts_enabled':settings['shortcuts'],'login_startup':settings['login'],
-               'otel_receiver':(before or {}).get('otel_receiver',False),'shortcut_files':(before or {}).get('shortcut_files',{})}
+               'otel_receiver':(before or {}).get('otel_receiver',False),'shortcut_files':(before or {}).get('shortcut_files',{}),
+               'shortcut_specs':(before or {}).get('shortcut_specs',{})}
     if not 0 <= desired['port'] <= 65535: raise ValueError('invalid_port')
     shortcuts_healthy = before and all(Path(n).is_file() and sha(Path(n).read_bytes())==v for n,v in before.get('shortcut_files',{}).items())
     shortcuts_healthy = shortcuts_healthy and all(p.is_file() for p,_,_ in platform.launcher_specs(paths.user,paths.codex,sys.executable,settings['shortcuts'],settings['login']))
@@ -223,24 +228,34 @@ def install(paths, source=SOURCE, repair=False, shortcuts=None, login=None, port
 
 def sync_shortcuts(paths, installed):
     desired = platform.launcher_specs(paths.user,paths.codex,installed['python'],installed['shortcuts_enabled'],installed['login_startup'])
-    previous = dict(installed.get('shortcut_files',{})); kept={}; errors=[]; conflicts=[]
+    previous = dict(installed.get('shortcut_files',{})); previous_specs=installed.get('shortcut_specs',{})
+    kept={}; specs={}; errors=[]; conflicts=[]
     allowed = shortcut_allowed(paths,installed)
     for path, kind, body in desired:
         path=path.absolute(); name=str(path)
         if name not in allowed or path.resolve()!=path.absolute(): raise ValueError('unsafe_shortcut_destination')
+        expected=None; fingerprint=shortcut_spec(kind,body)
         if path.is_file():
             if name not in previous or sha(path.read_bytes())!=previous[name]:conflicts.append(path.name);continue
-            kept[name]=previous[name]; continue
+            expected=previous[name]
+            if previous_specs.get(name)==fingerprint:
+                kept[name]=expected;specs[name]=fingerprint;continue
         path.parent.mkdir(parents=True,exist_ok=True)
         try:
-            if kind=='windows': platform.windows_shortcut(path,body,paths.skill/'scripts/New-RoutingShortcut.ps1')
+            if kind=='windows': platform.windows_shortcut(path,body,paths.skill/'scripts/New-RoutingShortcut.ps1',expected)
             else: atomic(path,body,kind=='executable')
             kept[name]=sha(path.read_bytes())
-        except (OSError,subprocess.SubprocessError):errors.append(path.name)
+            specs[name]=fingerprint
+        except (OSError,subprocess.SubprocessError):
+            errors.append(path.name)
+            if expected is not None:
+                kept[name]=expected
+                if name in previous_specs:specs[name]=previous_specs[name]
     for name, expected in previous.items():
         path=Path(name)
         if name not in kept and name in allowed and path.is_file() and sha(path.read_bytes())==expected: path.unlink()
     installed['shortcut_files']=kept
+    installed['shortcut_specs']=specs
     installed['shortcut_errors']=errors
     installed['shortcut_conflicts']=conflicts
     atomic(paths.receipt,encoded(installed))
@@ -250,7 +265,9 @@ def launcher_state(paths,installed):
     requested=installed['login_startup']
     specs=platform.launcher_specs(paths.user,paths.codex,installed['python'],False,requested)
     owned=installed.get('shortcut_files',{})
-    configured=bool(specs) and all(str(p.absolute()) in owned and p.is_file() and sha(p.read_bytes())==owned[str(p.absolute())] for p,_,_ in specs)
+    configured=bool(specs) and all(str(p.absolute()) in owned and p.is_file() and
+        sha(p.read_bytes())==owned[str(p.absolute())] and
+        installed.get('shortcut_specs',{}).get(str(p.absolute()))==shortcut_spec(kind,body) for p,kind,body in specs)
     return {'login_startup_requested':requested,'login_startup_configured':configured,
             'shortcut_errors':installed.get('shortcut_errors',[]),'shortcut_conflicts':installed.get('shortcut_conflicts',[])}
 
@@ -270,6 +287,12 @@ def rollback(paths):
             data=contained(backup/'files',record['blob']).read_bytes()
             if sha(data)!=expected: raise ValueError('rollback_backup_changed')
             restored[name]=data
+    # A path removed by the update is no longer owned. A user may have recreated
+    # it since; validate every restore destination before changing any files.
+    for name in restored:
+        path=paths.target(name)
+        if name not in current['files'] and path.exists():
+            raise ValueError('recreated_path_rollback_refused')
     for name,expected in current['files'].items():
         if name not in restored:
             path=paths.target(name)
@@ -277,6 +300,7 @@ def rollback(paths):
     for name,body in restored.items():atomic(paths.target(name),body,name.endswith('.sh'))
     if before:
         before['shortcut_files']=current.get('shortcut_files',{})
+        before['shortcut_specs']=current.get('shortcut_specs',{})
         atomic(paths.receipt,encoded(before));sync_shortcuts(paths,before)
     else:
         for name,expected in current.get('shortcut_files',{}).items():

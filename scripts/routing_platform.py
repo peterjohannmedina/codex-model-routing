@@ -1,4 +1,5 @@
 """Small platform adapters; no service, registry, shell-policy or ACL changes."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -67,7 +68,7 @@ def launcher_specs(user, codex, python, shortcuts=False, login=False, platform=s
     return result
 
 
-def windows_shortcut(path, arguments, helper):
+def windows_shortcut(path, arguments, helper, expected=None):
     python = Path(arguments[0])
     pythonw = python.with_name('pythonw.exe')
     if pythonw.is_file(): target, args = str(pythonw), arguments[1:]
@@ -86,6 +87,11 @@ def windows_shortcut(path, arguments, helper):
         subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(helper),
                         '-Path', str(temporary), '-Target', target, '-Arguments', subprocess.list2cmdline(args)],
                        capture_output=True, text=True, timeout=10, check=True)
-        # Windows rename refuses to overwrite a file created concurrently.
-        os.rename(temporary,path)
+        if expected is None:
+            # Windows rename refuses to overwrite a file created concurrently.
+            os.rename(temporary,path)
+        else:
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+                raise OSError('owned_shortcut_changed')
+            os.replace(temporary,path)
     finally:temporary.unlink(missing_ok=True)

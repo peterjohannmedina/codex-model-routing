@@ -54,7 +54,9 @@ An unchanged install/update does not replace the running instance. A changed
 update stops only the capability-authenticated managed receiver, updates files,
 then restarts it if it was running. An occupied unmanaged port is left alone.
 `rollback` restores the previous package snapshot after checking current ownership
-and backup hashes. It preserves profiles, prompts, history and credentials.
+and backup hashes. If an update removed a package path and it has since been
+recreated, rollback refuses before restoring any package files. Preserve or move
+that content before retrying. It preserves profiles, prompts, history and credentials.
 
 Backups are stored under `routing/dashboard-service/backups` with flat blob names
 to reduce Windows path-length pressure. No registry/long-path policy is changed.
@@ -87,7 +89,9 @@ Login startup defaults off. Explicitly choose `install/update --login-startup`
 `-LoginStartup:$false`). This writes only the user's Startup shortcut on Windows,
 an XDG autostart entry on Linux, or a LaunchAgent plist on macOS. It takes effect
 at the next login; the bootstrap does not invoke a system service manager or alter
-security permissions. User-edited launcher files are preserved.
+security permissions. User-edited launcher files are preserved. An update refreshes
+unchanged owned launchers when their interpreter or arguments change; a failed
+refresh is reported and is not claimed as configured startup.
 Status distinguishes a requested login choice from verified installed launcher
 files. Existing unmanaged or edited launchers are preserved and reported as
 conflicts; a conflict is not reported as successful startup configuration.

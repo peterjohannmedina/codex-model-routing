@@ -10,6 +10,8 @@
   only authenticated managed instances and refuse unmanaged occupied ports.
 - Document copyable Codex setup and Linux/macOS/Windows quickstarts, optional
   user launchers/login startup, telemetry consent and actual-switching limits.
+- Refuse rollback over a recreated removed package path before restoring files;
+  refresh unchanged owned launchers when their interpreter or arguments change.
 
 - Clarify credential environment-name fields and reject invalid names before a
   save request. Return static field-specific validation hints without echoing
