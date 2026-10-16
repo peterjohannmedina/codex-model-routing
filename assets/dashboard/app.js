@@ -11,6 +11,41 @@ const text = (id, value) => { byId(id).textContent = value; };
 const money = value => value === null || value === undefined ? 'Unknown' : '$' + value.toFixed(6);
 const number = value => value === null || value === undefined ? 'Unknown' : value.toLocaleString();
 const time = value => value ? new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : 'Unobserved';
+const configHints = {
+  invalid_key_environment_name:'Enter an environment-variable name such as OPENAI_API_KEY, not an API key value.',
+  missing_key_environment_name:'Enter OPENAI_API_KEY or another environment-variable name; store the key separately.',
+  invalid_timeout:'Use a timeout between 0.05 and 10 seconds.',
+  invalid_confidence_threshold:'Use a minimum confidence between 0 and 1.',
+  invalid_evaluator_token_cap:'Use a non-negative whole number or leave the input-token cap blank.',
+  invalid_evaluator_cost_cap:'Use a cost cap between 0 and 1000000 USD or leave it blank.',
+  invalid_output_budget:'Use a whole-number output limit between 1 and 4096.',
+  invalid_local_efforts:'Use supported effort names, separated by commas, such as default.',
+  invalid_local_model:'Use a nonsecret model ID of at most 256 characters.',
+  invalid_local_url:'Use an HTTP(S) base URL without credentials, query strings or fragments.',
+  sensitive_model_label:'Use a nonsecret model ID; do not include credential-like values.',
+  sensitive_endpoint:'Use a nonsecret HTTP(S) base URL without credentials, query strings or fragments.',
+  invalid_observability_configuration:'Check history retention (1–30 days), maximum requests (10–5000), and non-negative rates.',
+  invalid_config_flag:'Provider and history toggles must be enabled or disabled.'
+};
+const fieldLabels = {'decisions.api_key_env':'Decisions credential name','local.api_key_env':'Local credential name',
+  'decisions.timeout_seconds':'Decisions timeout','local.timeout_seconds':'Local timeout',
+  'decisions.minimum_confidence':'Minimum confidence','decisions.max_input_tokens':'Evaluator token cap',
+  'decisions.max_cost_usd':'Evaluator cost cap','local.max_output_tokens':'Local output limit','local.efforts':'Local efforts',
+  'local.model':'Local model','local.base_url':'Local base URL','observability':'History settings','providers':'Provider settings'};
+function saveError(error) {
+  if(error.code==='configuration_changed_reload_before_saving')return 'Settings changed in another tab or process. Reload saved settings before retrying.';
+  const hint=Object.hasOwn(configHints,error.code)?configHints[error.code]:null;
+  const label=Object.hasOwn(fieldLabels,error.field)?fieldLabels[error.field]:'Provider settings';
+  return hint?label+': '+hint:'Could not save settings. Check provider and history fields; keys are stored separately. No settings were saved.';
+}
+function credentialIssue(config) {
+  for(const group of ['decisions','local']) {
+    const value=config[group].api_key_env;
+    if((group==='decisions'&&value===null)||(value!==null&&!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)))
+      return {code:value===null?'missing_key_environment_name':'invalid_key_environment_name',field:group+'.api_key_env'};
+  }
+  return null;
+}
 async function api(path, body, bootstrap) {
   const controller = new AbortController(), timeout = setTimeout(()=>controller.abort(),5000);
   const options = {credentials:'same-origin', cache:'no-store',signal:controller.signal,headers:{'X-Routing-CSRF':csrf}};
@@ -19,7 +54,9 @@ async function api(path, body, bootstrap) {
   try {
     const response = await fetch(path, options);
     const value = await response.json();
-    if (!response.ok) throw new Error(value.error || 'local_request_failed');
+    if (!response.ok) {
+      const error=new Error(value.error || 'local_request_failed');error.code=value.error;error.field=value.field;throw error;
+    }
     return value;
   } finally {clearTimeout(timeout);}
 }
@@ -30,7 +67,7 @@ function fill(config, version) {
     else node.value = Array.isArray(value) ? value.join(', ') : (value ?? '');
   }
   formVersion = version; loaded = true; byId('save').disabled = false;
-  text('save-status','Saved settings loaded. Provider execution requires separate consent.');
+  text('save-status','Saved settings loaded. Keys are stored separately; provider execution requires consent.');
 }
 function readForm() {
   const config = {schema_version:1};
@@ -88,6 +125,7 @@ function renderChart(days) {
 }
 function render(data, formFresh = true) {
   const totals=data.totals;
+  text('coverage-status',(data.config.observability.enabled?'Local recording enabled. ':'Local recording disabled. ')+(data.sessions.length?'Retained session labels: '+data.sessions.length+'. Historical records do not prove an active feed.':'No recorded sessions yet. Connect an explicit router command or Codex exec JSON stream.')+' Dashboard connection does not connect sessions.');
   text('requests',number(totals.requests)); text('executions',number(totals.completed_executions));
   for(const name of ['evaluator','downstream']) {
     const input=totals[name].input_tokens;
@@ -101,13 +139,13 @@ function render(data, formFresh = true) {
   select.value=current;
   for(const name of ['decisions','local']){
     const enabled=data.config[name].enabled, configured=name==='decisions'||Boolean(data.config.local.model&&data.config.local.base_url);
-    text(name+'-configured',enabled?(configured?'Enabled · configured':'Enabled · unconfigured'):'Disabled');byId(name+'-configured').className='pill'+(enabled?'':' off');
+    text(name+'-configured',enabled?(configured?'Enabled · settings only':'Enabled · unconfigured'):'Disabled');byId(name+'-configured').className='pill'+(enabled?'':' off');
     const observed=data.events.find(e=>name==='local'?e.local_status&&e.local_status!=='disabled':e.evaluator_attempts>0||e.fallback_reason==='missing_api_key');
     text(name+'-observed',observed?'Last observation: '+(name==='local'?observed.local_status:observed.fallback_reason||'response received')+' · '+time(observed.observed_at)+' (historical)':'Last observation: unobserved');
   }
   if(!dirty&&!saving&&formFresh)fill(data.config,data.config_version);
   renderEvents(data.events);renderChart(data.daily);
-  text('updated','Refreshed '+time(data.observed_at)+' · local observation time');text('connection','Dashboard live · 2s');
+  text('updated','Refreshed '+time(data.observed_at)+' · local observation time');text('connection','Dashboard connected · 2s');
 }
 async function refresh(){
   if(polling)return;polling=true;
@@ -120,6 +158,9 @@ byId('config-form').addEventListener('input',()=>{editRevision++;dirty=true;text
 byId('config-form').addEventListener('submit',async event=>{
   event.preventDefault();if(!loaded||saving)return;
   const submittedRevision=editRevision, snapshot=readForm(), version=formVersion;
+  const issue=credentialIssue(snapshot);
+  for(const id of ['decisions-key-env','local-key-env'])byId(id).setAttribute('aria-invalid','false');
+  if(issue){byId(issue.field==='decisions.api_key_env'?'decisions-key-env':'local-key-env').setAttribute('aria-invalid','true');text('save-status',saveError(issue));return;}
   saving=true;formEpoch++;byId('save').disabled=true;byId('reload').disabled=true;
   try{
     const saved=await api('/api/config',{config:snapshot,version});
@@ -128,9 +169,9 @@ byId('config-form').addEventListener('submit',async event=>{
     dirty=editRevision!==submittedRevision;
     await refresh();
     dirty=editRevision!==submittedRevision;
-    text('save-status',dirty?'Saved earlier snapshot; newer edits remain unsaved.':'Saved locally. No provider request was made.');
+    text('save-status',dirty?'Saved earlier snapshot; newer edits remain unsaved.':'Settings saved locally. No key was stored or checked. No provider request was made.');
   }
-  catch(error){text('save-status','Save failed: '+error.message+'. Reload saved settings before retrying if another writer changed them.');}
+  catch(error){text('save-status',saveError(error));}
   finally{saving=false;byId('save').disabled=false;byId('reload').disabled=false;}
 });
 byId('reload').addEventListener('click',()=>{if(saving)return;formEpoch++;dirty=false;refresh();});

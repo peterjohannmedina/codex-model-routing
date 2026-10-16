@@ -73,7 +73,7 @@ def main(argv=None):
                     page.goto(server.origin + '/#authorize=' + server.bootstrap, wait_until='domcontentloaded')
                     expect(page.locator('#requests')).to_have_text('8')
                     expect(page.locator('#executions')).to_have_text('4')
-                    expect(page.locator('#connection')).to_have_text('Dashboard live · 2s')
+                    expect(page.locator('#connection')).to_have_text('Dashboard connected · 2s')
                     expect(page).to_have_url(server.origin + '/')
                     expect(page.locator('#message')).to_be_empty()
                     expect(page.locator('#save')).to_be_enabled()

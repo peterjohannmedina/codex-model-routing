@@ -291,6 +291,24 @@ class DashboardHTTP(unittest.TestCase):
         self.assertEqual(self.authenticated('GET','/../../config.json')[0].status,404)
         self.assertEqual(self.authenticated('GET','/api/execute')[0].status,404)
 
+    def test_validation_errors_identify_fields_without_echoing_credentials(self):
+        current = json.loads(self.authenticated('GET', '/api/state')[1])
+        payload = {'config': current['config'], 'version': current['config_version']}
+        fake = 'sk-proj-synthetic-not-a-real-key-123456'
+        payload['config']['decisions']['api_key_env'] = fake
+        response, raw = self.authenticated('POST', '/api/config', payload)
+        self.assertEqual(response.status, 400)
+        self.assertEqual(json.loads(raw)['field'], 'decisions.api_key_env')
+        self.assertNotIn(fake.encode(), raw)
+        self.assertFalse((self.root / 'config.json').exists())
+        payload['config']['decisions']['api_key_env'] = 'OPENAI_API_KEY'
+        payload['config']['decisions']['minimum_confidence'] = 2
+        response, raw = self.authenticated('POST', '/api/config', payload)
+        self.assertEqual(response.status, 400)
+        self.assertEqual(json.loads(raw)['field'], 'decisions.minimum_confidence')
+        payload['config']['decisions']['minimum_confidence'] = 0.7
+        self.assertEqual(self.authenticated('POST', '/api/config', payload)[0].status, 200)
+
     def test_real_live_updates_session_drilldown_and_replay(self):
         ledger = state.Ledger(self.root)
         session = str(uuid.uuid4())

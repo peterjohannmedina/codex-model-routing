@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased - 2026-10-16
+
+- Clarify credential environment-name fields and reject invalid names before a
+  save request. Return static field-specific validation hints without echoing
+  submitted values; reserve reload guidance for actual version conflicts.
+- Distinguish dashboard connectivity, saved enablement and retained observations
+  from active session feeds or verified credentials. No credential is stored or
+  tested by saving settings; telemetry activation remains separate.
+
 ## Unreleased — 2026-10-15
 
 - Preserve authoritative Codex thread identity and known annotations across

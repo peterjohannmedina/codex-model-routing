@@ -42,7 +42,7 @@ async function anchors(){
     assert.equal(ui.calls.filter(c=>c.url==='/api/auth').length,0,'navigation was treated as bootstrap');
     assert.equal(ui.nodes.requests.textContent,'0','stored authorized session was not recovered');
     assert.equal(ui.historyChanges.length,0,'navigation anchor was discarded');
-    ui.poll();await flush();assert.match(ui.nodes.connection.textContent,/Dashboard live/);
+    ui.poll();await flush();assert.match(ui.nodes.connection.textContent,/Dashboard connected/);
   }
   const expired=boot('#authorize=expired-nonce');await flush();await flush();
   assert.equal(expired.nodes.requests.textContent,'0','failed bootstrap discarded a valid stored capability');

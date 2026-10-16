@@ -7,6 +7,7 @@ from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import tempfile
@@ -21,21 +22,76 @@ import routing_state as state
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/dashboard'
 
+CONFIG_HINTS = {
+    'invalid_key_environment_name': 'Enter an environment-variable name such as OPENAI_API_KEY, not an API key value.',
+    'missing_key_environment_name': 'Enter OPENAI_API_KEY or another environment-variable name; store the key separately.',
+    'invalid_timeout': 'Use a timeout between 0.05 and 10 seconds.',
+    'invalid_confidence_threshold': 'Use a minimum confidence between 0 and 1.',
+    'invalid_evaluator_token_cap': 'Use a non-negative whole number or leave the input-token cap blank.',
+    'invalid_evaluator_cost_cap': 'Use a cost cap between 0 and 1000000 USD or leave it blank.',
+    'invalid_output_budget': 'Use a whole-number output limit between 1 and 4096.',
+    'invalid_local_efforts': 'Use supported effort names, separated by commas, such as default.',
+    'invalid_local_model': 'Use a nonsecret model ID of at most 256 characters.',
+    'invalid_local_url': 'Use an HTTP(S) base URL without credentials, query strings or fragments.',
+    'sensitive_model_label': 'Use a nonsecret model ID; do not include credential-like values.',
+    'sensitive_endpoint': 'Use a nonsecret HTTP(S) base URL without credentials, query strings or fragments.',
+    'invalid_observability_configuration': 'Check history retention (1–30 days), maximum requests (10–5000), and non-negative rates.',
+    'invalid_config_flag': 'Provider and history toggles must be enabled or disabled.',
+}
+
+
+class ConfigValidationError(ValueError):
+    def __init__(self, code, field=None):
+        self.code = code if code in CONFIG_HINTS else 'invalid_or_sensitive_configuration'
+        self.field = field
+        super().__init__(self.code)
+
+    def payload(self):
+        return {'error': self.code, 'field': self.field,
+                'message': CONFIG_HINTS.get(self.code, 'Check provider and history settings. No configuration was saved.')}
+
+
+def config_error_field(raw, code):
+    if not isinstance(raw, dict): return None
+    if code in ('invalid_key_environment_name', 'missing_key_environment_name', 'invalid_timeout'):
+        for group in ('decisions', 'local'):
+            value = raw.get(group, {})
+            if not isinstance(value, dict): continue
+            if code == 'invalid_timeout':
+                if not core.number(value.get('timeout_seconds', 3 if group == 'decisions' else 2), 0.05, 10):
+                    return group + '.timeout_seconds'
+            else:
+                name = value.get('api_key_env', 'OPENAI_API_KEY' if group == 'decisions' else None)
+                if ((name is None and group == 'decisions') or
+                        (name is not None and (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,127}', name)))):
+                    return group + '.api_key_env'
+    return {'invalid_confidence_threshold':'decisions.minimum_confidence',
+            'invalid_evaluator_token_cap':'decisions.max_input_tokens', 'invalid_evaluator_cost_cap':'decisions.max_cost_usd',
+            'invalid_output_budget':'local.max_output_tokens', 'invalid_local_efforts':'local.efforts',
+            'invalid_local_model':'local.model', 'invalid_local_url':'local.base_url',
+            'invalid_observability_configuration':'observability', 'invalid_config_flag':'providers'}.get(code)
+
 
 def config_version(config):
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 
 def safe_config(raw):
-    config = runtime.Config.parse(raw)
-    for value in (config.local.model, config.local.base_url):
-        if value and state.SECRET.search(value): raise ValueError('sensitive_configuration_value')
+    try: config = runtime.Config.parse(raw)
+    except core.RoutingError as error:
+        code = str(error)
+        raise ConfigValidationError(code, config_error_field(raw, code)) from None
+    for field, value in (('local.model', config.local.model), ('local.base_url', config.local.base_url)):
+        if value and state.SECRET.search(value):
+            raise ConfigValidationError('sensitive_model_label' if field == 'local.model' else 'sensitive_endpoint', field)
     if config.local.base_url:
         # URL shape is checked even while a provider is disabled; never echo URL credentials.
-        parsed = urlsplit(config.local.base_url)
-        parsed.port  # Validate a supplied port before persisting or echoing it.
-        if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None
-                or parsed.password is not None or parsed.query or parsed.fragment): raise ValueError('invalid_url')
+        try:
+            parsed = urlsplit(config.local.base_url)
+            parsed.port  # Validate a supplied port before persisting or echoing it.
+            if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None
+                    or parsed.password is not None or parsed.query or parsed.fragment): raise ValueError()
+        except ValueError: raise ConfigValidationError('invalid_local_url', 'local.base_url') from None
     return {'schema_version': 1, **asdict(config)}
 
 
@@ -243,6 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {'error': 'not_found'})
         except FileExistsError:
             return self.reply(409, {'error': 'configuration_changed_reload_before_saving'})
+        except ConfigValidationError as error:
+            return self.reply(400, error.payload())
         except (ValueError, TypeError, UnicodeError, runtime.core.ProviderFailure, RecursionError):
             return self.reply(400, {'error': 'invalid_or_sensitive_configuration'})
         except (OSError, state.sqlite3.Error):
