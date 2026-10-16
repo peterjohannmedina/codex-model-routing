@@ -14,6 +14,11 @@ Validation also checks confidence (0–1), timeouts (0.05–10 seconds), token/c
 bounds, supported local efforts and a nonsecret URL without credentials, query
 strings or fragments. Errors contain fixed hints and field identifiers, never
 submitted values. Unknown errors receive a generic safe hint.
+Native browser validation also displays these fixed credential-name hints and
+marks the field invalid before submission; editing the field clears the custom
+error. Chromium CI clicks Save for synthetic key values and a missing Decisions
+name, checks correction/recovery, and verifies no configuration request or write
+and no credential echo. It does not substitute a direct submit-handler call.
 
 Only a **settings changed in another tab** conflict requires reloading saved
 settings. Reloading does not repair an invalid environment name or other field.

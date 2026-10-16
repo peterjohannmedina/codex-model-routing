@@ -5,6 +5,9 @@
 - Clarify credential environment-name fields and reject invalid names before a
   save request. Return static field-specific validation hints without echoing
   submitted values; reserve reload guidance for actual version conflicts.
+- Handle native required/pattern rejection with fixed hints and accessible error
+  state; clear custom validity on correction/reload. Exercise actual Save-button
+  validation in Chromium with synthetic credentials and no requests or writes.
 - Distinguish dashboard connectivity, saved enablement and retained observations
   from active session feeds or verified credentials. No credential is stored or
   tested by saving settings; telemetry activation remains separate.

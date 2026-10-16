@@ -7,6 +7,7 @@ class Element{
   constructor(type=''){this.type=type;this.value='';this.checked=false;this.children=[];this.listeners={};this.textContent='';}
   append(...items){this.children.push(...items);}replaceChildren(...items){this.children=items;}
   setAttribute(){}addEventListener(kind,fn){this.listeners[kind]=fn;}
+  setCustomValidity(value){this.validationMessage=value;}
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 function boot(hash,delaySave=false){

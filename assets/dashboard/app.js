@@ -46,6 +46,20 @@ function credentialIssue(config) {
   }
   return null;
 }
+function showCredentialIssue(issue, node) {
+  node.setCustomValidity(configHints[issue.code]);
+  node.setAttribute('aria-invalid','true');
+  text('save-status',saveError(issue));
+}
+for(const group of ['decisions','local']) {
+  const node=byId(fields[group].api_key_env);
+  // Native required/pattern validation runs before submit and does not bubble.
+  node.addEventListener('invalid',event=>{
+    event.preventDefault();
+    showCredentialIssue({code:group==='decisions'&&!node.value.trim()?'missing_key_environment_name':'invalid_key_environment_name',field:group+'.api_key_env'},node);
+  });
+  node.addEventListener('input',()=>{node.setCustomValidity('');node.setAttribute('aria-invalid','false');});
+}
 async function api(path, body, bootstrap) {
   const controller = new AbortController(), timeout = setTimeout(()=>controller.abort(),5000);
   const options = {credentials:'same-origin', cache:'no-store',signal:controller.signal,headers:{'X-Routing-CSRF':csrf}};
@@ -65,6 +79,9 @@ function fill(config, version) {
     const node = byId(id), value = config[group][key];
     if (node.type === 'checkbox') node.checked = value;
     else node.value = Array.isArray(value) ? value.join(', ') : (value ?? '');
+  }
+  for(const group of ['decisions','local']) {
+    const node=byId(fields[group].api_key_env);node.setCustomValidity('');node.setAttribute('aria-invalid','false');
   }
   formVersion = version; loaded = true; byId('save').disabled = false;
   text('save-status','Saved settings loaded. Keys are stored separately; provider execution requires consent.');
@@ -160,7 +177,7 @@ byId('config-form').addEventListener('submit',async event=>{
   const submittedRevision=editRevision, snapshot=readForm(), version=formVersion;
   const issue=credentialIssue(snapshot);
   for(const id of ['decisions-key-env','local-key-env'])byId(id).setAttribute('aria-invalid','false');
-  if(issue){byId(issue.field==='decisions.api_key_env'?'decisions-key-env':'local-key-env').setAttribute('aria-invalid','true');text('save-status',saveError(issue));return;}
+  if(issue){showCredentialIssue(issue,byId(issue.field==='decisions.api_key_env'?'decisions-key-env':'local-key-env'));return;}
   saving=true;formEpoch++;byId('save').disabled=true;byId('reload').disabled=true;
   try{
     const saved=await api('/api/config',{config:snapshot,version});

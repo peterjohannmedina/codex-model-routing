@@ -38,6 +38,12 @@ JavaScript errors. Private bootstrap state remains in memory and is never
 included in artifacts. No traces, HAR files, browser profiles, storage exports or
 temporary database files are uploaded. Screenshots use browser capture bounds;
 there is no image editing or replacement UI markup.
+The same Chromium run clicks Save with synthetic credential values and a missing
+Decisions name. Native validation must show fixed hints and `aria-invalid`, clear
+on correction, transmit no configuration or credential value, and leave the
+synthetic config unchanged. These checks run after the Providers screenshot;
+synthetic credential inputs are never included in captured images. Provenance
+records case identifiers and zero transmission/write results without input values.
 
 ## Reproduce
 

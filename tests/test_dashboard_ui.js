@@ -9,6 +9,7 @@ class Element {
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=[...nodes];}
   setAttribute(key,value){this.attributes[key]=value;}
+  setCustomValidity(value){this.validationMessage=value;}
   addEventListener(kind,fn){this.listeners[kind]=fn;}
 }
 const html=fs.readFileSync(path.join(root,'assets/dashboard/index.html'),'utf8');
@@ -52,6 +53,15 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   data.config.decisions.enabled=true;interval();await flush();
   assert.equal(nodes['decisions-configured'].textContent,'Enabled · settings only');
   assert.match(nodes['decisions-observed'].textContent,/unobserved/);
+  let nativePrevented=false;
+  nodes['decisions-key-env'].value='';
+  nodes['decisions-key-env'].listeners.invalid({preventDefault(){nativePrevented=true;}});
+  assert.ok(nativePrevented);
+  assert.match(nodes['save-status'].textContent,/Enter OPENAI_API_KEY/);
+  assert.equal(nodes['decisions-key-env'].attributes['aria-invalid'],'true');
+  nodes['decisions-key-env'].value='OPENAI_API_KEY';nodes['decisions-key-env'].listeners.input();
+  assert.equal(nodes['decisions-key-env'].validationMessage,'');
+  assert.equal(nodes['decisions-key-env'].attributes['aria-invalid'],'false');
   const beforeInvalid=calls.filter(c=>c.url==='/api/config').length;
   for(const id of ['decisions-key-env','local-key-env']) {
     nodes[id].value='sk-synthetic-do-not-send-or-echo';nodes['config-form'].listeners.input();
