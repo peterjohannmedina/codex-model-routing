@@ -430,11 +430,19 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
             length = int(self.headers['Content-Length'])
-            if not 1 <= length <= otel.MAX_BYTES:
-                self.server.record_otel(requests=1, invalid_batches=1)
-                return self.reply(413, {'error': 'body_too_large'})
+        except (ValueError, TypeError):
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(400, {'error': 'invalid_otlp_logs'})
+        if not 1 <= length <= otel.MAX_BYTES:
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(413, {'error': 'body_too_large'})
+        try:
             raw = self.rfile.read(length)
             if len(raw) != length: raise ValueError()
+        except (OSError, ValueError):
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(400, {'error': 'invalid_otlp_logs'})
+        try:
             config, _ = self.server.store.config()
             settings = state.LedgerSettings.parse(config['observability'])
             if settings.enabled:
@@ -446,14 +454,16 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 otel.decode(raw)
                 self.server.record_otel(received=True, requests=1, validated_batches=1, recording_disabled_batches=1)
-            # Empty OTLP ExportLogsServiceResponse; never echo raw records.
-            return self.reply(200, {})
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
             self.server.record_otel(requests=1, invalid_batches=1)
             return self.reply(400, {'error': 'invalid_otlp_logs'})
         except (OSError, state.sqlite3.Error):
             self.server.record_otel(requests=1, storage_errors=1)
             return self.reply(503, {'error': 'storage_unavailable'})
+        # A disconnected exporter must not turn successful ingestion into a
+        # second request/storage failure. Never include transport writes in the
+        # storage exception boundary. Empty OTLP response; no raw record echo.
+        return self.reply(200, {})
 
 
 def main(argv=None):

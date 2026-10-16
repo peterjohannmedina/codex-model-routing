@@ -126,6 +126,22 @@ class OTelMetadata(unittest.TestCase):
                 self.assertEqual(persisted['requests'],1);self.assertEqual(persisted[outcome],1)
                 self.assertIsNone(persisted['last_observation_at'])
 
+    def test_exporter_disconnect_does_not_duplicate_request_or_claim_storage_failure(self):
+        store=dashboard.Store(self.root/'disconnected')
+        server=object.__new__(dashboard.Server)
+        server.store=store;server.otel_lock=threading.Lock();server.last_status_write=0
+        server.otel_capability=TOKEN;server.origin='http://127.0.0.1:49152'
+        handler=object.__new__(dashboard.Handler);handler.server=server
+        raw=payload(record('start'));handler.rfile=io.BytesIO(raw);handler.headers=Message()
+        for name,value in {'Host':'127.0.0.1:49152',otel.HEADER:TOKEN,'Content-Type':'application/json',
+                           'Content-Length':str(len(raw))}.items():handler.headers[name]=value
+        with patch.object(handler,'reply',side_effect=BrokenPipeError()):
+            with self.assertRaises(BrokenPipeError):handler.otel_logs()
+        self.assertEqual(store.otel_status['requests'],1)
+        self.assertEqual(store.otel_status['accepted_records'],1)
+        self.assertEqual(store.otel_status['storage_errors'],0)
+        self.assertEqual(store.snapshot()['sessions'],[SESSION])
+
     def test_new_resume_model_effort_and_interrupt_observations(self):
         otel.ingest(payload(record('start')),self.ledger)
         resumed=record('start',model='gpt-6-luna',reasoning_effort='max')
