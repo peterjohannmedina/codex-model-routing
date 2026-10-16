@@ -32,6 +32,7 @@ $requiredFiles = @(
     (Join-Path 'scripts' 'routing_otel.py'),
     (Join-Path 'scripts' 'routing_otel_setup.py'),
     (Join-Path 'scripts' 'Prepare-RoutingTelemetry.ps1'),
+    (Join-Path 'scripts' 'Test-RoutingTelemetryAcl.ps1'),
     (Join-Path 'scripts' 'routing_dashboard.py'),
     (Join-Path 'scripts' 'collect_codex_json.py'),
     (Join-Path 'scripts' 'Start-RoutingDashboard.ps1'),

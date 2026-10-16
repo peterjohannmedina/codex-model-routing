@@ -69,6 +69,7 @@ for relative_path in \
     scripts/routing_otel.py \
     scripts/routing_otel_setup.py \
     scripts/Prepare-RoutingTelemetry.ps1 \
+    scripts/Test-RoutingTelemetryAcl.ps1 \
     scripts/routing_dashboard.py \
     scripts/collect_codex_json.py \
     scripts/Start-RoutingDashboard.ps1 \

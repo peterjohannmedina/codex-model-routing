@@ -61,11 +61,26 @@ tool never restarts or interrupts a daemon. No wrapper, hook trust bypass or per
 collector is required. No model request is made by the setup or dashboard.
 
 Setup preserves the original config bytes in an owner-private backup and checks
-the approved hash again before writing. It refuses existing setup files and uses
+the approved hash on every baseline and pre-write read. It refuses existing setup files and uses
 an exclusive setup lock. The appended configuration is parsed and all non-OTel
 values must remain identical. Do not edit config concurrently with applying it.
-On Windows, files inherit the user's private directory ACL; on Unix, capability,
-receipt and backup files are mode 0600. Never share them or commit them to Git.
+Symlink/reparse config targets are refused by plan, apply, atomic replacement and
+undo; managed targets and links are never replaced. No permission repair is automatic.
+
+The matching local capability is embedded in the exporter header in `config.toml`,
+so that config must already be private. Unix rejects any group/other file access,
+wrong ownership or group/other directory write permission; it preserves the
+existing config mode. Windows uses a read-only ACL probe: only the current user,
+SYSTEM and administrators may read data or replace/control secret destinations.
+Null/unknown ACLs and unverified probes block activation. Empty temporary files
+are verified before any secret is written; a Windows replacement must also have
+the original owner/group/DACL, otherwise it is refused. The probe changes no ACLs
+or security permissions. A blocked plan needs separately approved manual security
+review, not automatic chmod, ACL alteration or elevated privileges.
+
+New Unix capability, receipt and backup files use mode 0600; new directories use
+mode 0700. Existing directory modes are not changed. Windows files must inherit
+verified private permissions. Never share these files or commit them to Git.
 
 To undo, stop the receiver, then use the applied config hash returned by setup:
 
@@ -75,7 +90,8 @@ python3 -B scripts/routing_otel_setup.py --undo --approved-config-sha256 APPLIED
 
 PowerShell supports `Prepare-RoutingTelemetry.ps1 -Undo -ApprovedConfigSha256`.
 Undo restores exact original bytes only when config and backup hashes still
-match. Later edits cause a refusal, requiring a manual reviewed merge. It removes
+match. Later edits, linked targets or nonprivate permissions cause a refusal,
+requiring a manual reviewed merge. It removes
 the owned capability/receipt, retains the backup, and does not clear usage history.
 Restart Codex after undo; already-running processes retain their old settings.
 

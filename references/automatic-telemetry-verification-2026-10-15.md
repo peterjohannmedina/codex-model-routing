@@ -1,5 +1,37 @@
 # Automatic telemetry verification — 2026-10-15
 
+## Independent-review repairs — 2026-10-16
+
+The original setup review reproduced three preservation/security bugs; this PR
+now includes regressions and fixes for all three:
+
+- Refuse to embed a local capability in a broadly readable config. Unix rejects
+  0644 config files without changing their modes. Windows verifies owner and
+  DACL privacy read-only, with SYSTEM/administrators as privileged exceptions;
+  unknown/unavailable ACL checks fail closed. Empty temporary files are checked
+  before receiving secret bytes, and replacement owner/group/DACL must match.
+  No existing permissions are automatically repaired or broadened.
+- Compare the second baseline read to the exact approved hash, as well as every
+  pre-write read. A synthetic edit between plan and baseline now rejects instead
+  of applying an unapproved baseline. No capability/receipt/backup is created for
+  that rejected baseline.
+- Refuse symlink/reparse config targets during plan, reads, atomic replacement
+  and undo. Synthetic symlinks remain links and their managed targets remain
+  unchanged. Windows reparse flags are also exercised without requiring link
+  creation privileges.
+
+Windows ACL tests alter only guarded disposable fixture directories and use
+access-only DACL operations, requiring no audit/security privilege. A second
+fixture grants Everyone read access to its dummy config and verifies refusal.
+Read-only production probes return fixed verdicts without identity/ACL contents.
+Microsoft documents [OWNER RIGHTS](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers)
+as the current object's owner; it is accepted only after the owner is verified.
+The earlier 86-test evidence below remains historical; final post-fix CI is linked
+from the PR description. No live JJP config, ACL, installed package or telemetry
+activation was changed during these repairs.
+
+## Initial implementation evidence
+
 Acceptance target: installed JJP Codex CLI **0.162.1**, verified with `--version`
 and read-only help/schema generation. The official source tag resolves to
 `092d3acd6bec3e3a14bdc7e7a2810ab628ab759d`. Its OTel JSON exporter and

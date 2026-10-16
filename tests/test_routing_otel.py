@@ -10,6 +10,7 @@ import tempfile
 import subprocess
 import threading
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -133,12 +134,96 @@ class OTelMetadata(unittest.TestCase):
 
 class OTelSetup(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(dir=ROOT.parent)
+        self.temp=tempfile.TemporaryDirectory(prefix='routing-otel-setup-',dir=ROOT.parent)
         self.home=Path(self.temp.name)
         self.addCleanup(self.temp.cleanup)
+        if os.name=='nt':
+            private=subprocess.run(['powershell.exe','-NoProfile','-File',str(ROOT/'tests/set_private_acl_fixture.ps1'),
+                '-LiteralPath',str(self.home)],capture_output=True,text=True,timeout=10)
+            self.assertEqual(private.returncode,0,private.stderr)
         self.config=self.home/'config.toml'
         self.original=b'# synthetic config\nmodel = "gpt-6.1-sol"\n[analytics]\nenabled = false\n'
         self.config.write_bytes(self.original)
+        if os.name!='nt': self.config.chmod(0o600)
+
+    def test_edit_between_plan_and_baseline_rejects_unapproved_bytes(self):
+        approved=setup.plan(self.home)['config_sha256']
+        actual_read=setup.read_config
+        calls=0
+        changed=self.original+b'# unapproved concurrent edit\n'
+        def editing_read(path):
+            nonlocal calls
+            calls+=1
+            if calls==2: self.config.write_bytes(changed)
+            return actual_read(path)
+        with patch.object(setup,'read_config',side_effect=editing_read):
+            with self.assertRaises(ValueError): setup.apply(self.home,approved)
+        self.assertEqual(self.config.read_bytes(),changed)
+        self.assertFalse((self.home/'routing/otel-receiver.capability').exists())
+        self.assertFalse((self.home/'routing/otel-setup-receipt.json').exists())
+        self.assertEqual(list((self.home/'routing').glob('otel-config-before-*')),[])
+
+    @unittest.skipIf(os.name=='nt','Unix permission modes')
+    def test_readable_config_refuses_secret_without_permission_changes(self):
+        self.config.chmod(0o644)
+        before=setup.plan(self.home)
+        self.assertFalse(before['ready'])
+        self.assertEqual(before['blocked_reason'],'configuration_permissions_not_private_or_unverified')
+        with self.assertRaises(ValueError): setup.apply(self.home,before['config_sha256'])
+        self.assertEqual(self.config.read_bytes(),self.original)
+        self.assertEqual(self.config.stat().st_mode & 0o777,0o644)
+        self.assertFalse((self.home/'routing/otel-receiver.capability').exists())
+
+    def test_unverified_permissions_fail_closed(self):
+        with patch.object(setup,'private_permissions',return_value=False):
+            prepared=setup.plan(self.home)
+            self.assertFalse(prepared['ready'])
+            with self.assertRaises(ValueError): setup.apply(self.home,prepared['config_sha256'])
+        self.assertEqual(self.config.read_bytes(),self.original)
+        self.assertFalse((self.home/'routing/otel-receiver.capability').exists())
+
+    @unittest.skipUnless(os.name=='nt','Windows ACL privacy boundary')
+    def test_windows_readable_config_refuses_secret(self):
+        granted=subprocess.run(['powershell.exe','-NoProfile','-File',str(ROOT/'tests/set_private_acl_fixture.ps1'),
+            '-LiteralPath',str(self.home),'-GrantEveryoneRead'],capture_output=True,text=True,timeout=10)
+        self.assertEqual(granted.returncode,0,granted.stderr)
+        prepared=setup.plan(self.home)
+        self.assertFalse(prepared['ready'])
+        self.assertFalse(prepared['private_permissions_verified'])
+        with self.assertRaises(ValueError): setup.apply(self.home,prepared['config_sha256'])
+        self.assertEqual(self.config.read_bytes(),self.original)
+        self.assertFalse((self.home/'routing/otel-receiver.capability').exists())
+
+    @unittest.skipIf(os.name=='nt','Portable symlink fixture; Windows reparse flag tested separately')
+    def test_symlink_config_plan_apply_and_undo_preserve_link(self):
+        target=self.home/'managed.toml'
+        self.config.rename(target);self.config.symlink_to(target)
+        prepared=setup.plan(self.home)
+        self.assertFalse(prepared['ready'])
+        self.assertEqual(prepared['blocked_reason'],'linked_config_target_not_supported')
+        with self.assertRaises(ValueError): setup.apply(self.home,setup.sha(self.original))
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(target.read_bytes(),self.original)
+        self.config.unlink();self.config.write_bytes(self.original);self.config.chmod(0o600)
+        applied=setup.apply(self.home,setup.plan(self.home)['config_sha256'])
+        configured=self.config.read_bytes()
+        self.config.unlink();self.config.symlink_to(target)
+        with self.assertRaises(ValueError): setup.undo(self.home,applied['config_sha256'])
+        self.assertTrue(self.config.is_symlink())
+        self.assertEqual(target.read_bytes(),self.original)
+        self.assertNotEqual(configured,self.original)
+
+    def test_windows_reparse_config_is_refused_without_reading_target(self):
+        actual=Path.lstat
+        class Reparse:
+            st_mode=0o100600
+            st_file_attributes=0x400
+        def marked(path,*args,**kwargs):
+            return Reparse() if path==self.config else actual(path,*args,**kwargs)
+        with patch.object(Path,'lstat',marked):
+            self.assertEqual(setup.plan(self.home)['blocked_reason'],'linked_config_target_not_supported')
+            with self.assertRaises(ValueError): setup.read_config(self.config)
+        self.assertEqual(self.config.read_bytes(),self.original)
 
     def test_plan_writes_nothing_and_refuses_any_existing_exporter(self):
         result=setup.plan(self.home)

@@ -159,7 +159,7 @@ class UnixInstall(unittest.TestCase):
             for name in ('Invoke-Routing.ps1', 'Set-RoutingApiKey.ps1', 'routing_runtime.py', 'invoke-routing.sh',
                          'routing_state.py', 'routing_dashboard.py', 'collect_codex_json.py',
                          'Resolve-RoutingPython.ps1', 'Start-RoutingDashboard.ps1', 'routing_otel.py',
-                         'routing_otel_setup.py', 'Prepare-RoutingTelemetry.ps1'):
+                         'routing_otel_setup.py', 'Prepare-RoutingTelemetry.ps1', 'Test-RoutingTelemetryAcl.ps1'):
                 self.assertTrue((skill / 'scripts' / name).exists())
             result = subprocess.run(['sh', str(skill / 'scripts' / 'invoke-routing.sh'),
                 str(skill / 'assets' / 'routing-packet.example.json'), '--offline'],
