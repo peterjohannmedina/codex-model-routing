@@ -149,6 +149,7 @@ function render(data, formFresh = true) {
   text('otel-receiver',receiver?.enabled?'Receiver listening · '+(receiver.accepted_records?'metadata received':'no metadata received'):'Receiver disabled');
   text('otel-summary',otel.sessions+' sessions with retained OTel metadata; '+otel.responses+' model-response observations. '+(otel.responses?'Known input / output tokens: '+number(otel.input_tokens.known)+' / '+number(otel.output_tokens.known)+'; unknown input / output: '+otel.input_tokens.unknown_responses+' / '+otel.output_tokens.unknown_responses+'. ':'No response usage observed. ')+(receiver?.last_received_at?'Last validated batch: '+time(receiver.last_received_at)+'.':'No validated batch in this receiver process.'));
   let diagnostic=!receiver?.enabled?'Start the approved receiver to receive CLI exports.':
+    !receiver.runtime_version?'This receiver predates compatibility diagnostics. Update and restart the dashboard receiver through its supported lifecycle before testing new CLI exports; this does not restart Codex.':
     receiver.unsupported_version_records?'Some records use an unsupported CLI version; check compatibility before upgrading the receiver.':
     receiver.unauthorized_requests?'Some exporter requests failed authorization or Host/origin checks; review the approved endpoint and capability setup.':
     receiver.invalid_batches?'Some exporter requests failed JSON/schema/size checks; use uncompressed OTLP/HTTP JSON.':
@@ -158,7 +159,7 @@ function render(data, formFresh = true) {
     !receiver.last_received_at?'No export batch has reached this receiver. Confirm the producer uses the same Codex home and approved exporter; an already-running producer may retain startup settings.':
     'Metadata has reached this receiver; retained history does not prove that every open session is connected.';
   const count=value=>number(Number.isSafeInteger(value)&&value>=0?value:0);
-  diagnostic+=' Requests / unauthorized / invalid: '+count(receiver?.requests)+' / '+count(receiver?.unauthorized_requests)+' / '+count(receiver?.invalid_batches)+
+  if(receiver?.runtime_version)diagnostic+=' Requests / unauthorized / invalid: '+count(receiver?.requests)+' / '+count(receiver?.unauthorized_requests)+' / '+count(receiver?.invalid_batches)+
     '. Accepted / ignored / rejected records: '+count(receiver?.accepted_records)+' / '+count(receiver?.ignored_records)+' / '+count(receiver?.rejected_records)+'.';
   if(receiver?.state_id)diagnostic+=' Local state ID: '+receiver.state_id+'.';
   if(receiver?.runtime_version)diagnostic+=' Runtime: '+receiver.runtime_version+'.';

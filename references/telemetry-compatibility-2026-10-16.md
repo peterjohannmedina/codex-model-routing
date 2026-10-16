@@ -39,8 +39,9 @@ from retained ledger observations, including the selected session filter.
 `routing/receiver-status.json` stores only fixed counters, runtime version,
 timestamps and a state-directory fingerprint. It contains no raw records, session
 IDs, exporter headers, capabilities or user configuration. It resets per receiver
-process. Diagnostic writes for invalid/unauthorized bursts are bounded to once per
-second; authenticated UI counters are current. The file is best-effort and may be
+process. Each first failure category is written immediately; repeated invalid/
+unauthorized burst updates are limited to once per second. Authenticated UI counters
+are current. The file is best-effort and may be
 stale after a receiver exits. Its existence alone is not live health.
 
 ## Minimum real acceptance

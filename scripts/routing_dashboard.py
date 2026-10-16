@@ -211,6 +211,8 @@ class Server(ThreadingHTTPServer):
     def record_otel(self, received=False, observed=False, **increments):
         with self.otel_lock:
             status = self.store.otel_status
+            first_failure = any(name in ('unauthorized_requests', 'invalid_batches', 'storage_errors') and
+                status[name] == 0 and amount > 0 for name, amount in increments.items())
             for name, amount in increments.items():
                 if name not in status or type(status[name]) is not int or type(amount) is not int:
                     raise ValueError('invalid_receiver_counter')
@@ -220,7 +222,7 @@ class Server(ThreadingHTTPServer):
             # Bound writes for unauthenticated or invalid request bursts. The
             # authenticated UI always reads current in-memory counters.
             now = time.monotonic()
-            if received or now - self.last_status_write >= 1:
+            if received or first_failure or now - self.last_status_write >= 1:
                 self.store.write_receiver_status()
                 self.last_status_write = now
 
@@ -409,26 +411,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(400, {'error': 'invalid_lifecycle_request'})
 
     def otel_logs(self):
-        self.server.record_otel(requests=1)
         secret = self.server.otel_capability
-        if secret is None: return self.reply(404, {'error': 'not_found'})
+        if secret is None:
+            self.server.record_otel(requests=1)
+            return self.reply(404, {'error': 'not_found'})
         # Dedicated native exporter capability; browser cookie/CSRF never grants
         # ingest permission. Browser Origin/Fetch headers are always rejected.
         if (self.headers.get_all('Host', []) != [urlsplit(self.server.origin).netloc]
                 or len(self.headers.get_all(otel.HEADER, [])) != 1
                 or not hmac.compare_digest(self.headers.get(otel.HEADER, '').encode('utf-8'), secret.encode('ascii'))
                 or self.headers.get('Origin') is not None or self.headers.get('Sec-Fetch-Site') is not None):
-            self.server.record_otel(unauthorized_requests=1)
+            self.server.record_otel(requests=1, unauthorized_requests=1)
             return self.reply(403, {'error': 'forbidden_exporter'})
         if (self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding')
                 or self.headers.get('Transfer-Encoding')):
-            self.server.record_otel(invalid_batches=1)
+            self.server.record_otel(requests=1, invalid_batches=1)
             return self.reply(415, {'error': 'uncompressed_json_required'})
         try:
             if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
             length = int(self.headers['Content-Length'])
             if not 1 <= length <= otel.MAX_BYTES:
-                self.server.record_otel(invalid_batches=1)
+                self.server.record_otel(requests=1, invalid_batches=1)
                 return self.reply(413, {'error': 'body_too_large'})
             raw = self.rfile.read(length)
             if len(raw) != length: raise ValueError()
@@ -437,19 +440,19 @@ class Handler(BaseHTTPRequestHandler):
             if settings.enabled:
                 diagnostics = {}
                 counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings), diagnostics)
-                self.server.record_otel(received=True, observed=counts['accepted'] > 0, validated_batches=1,
+                self.server.record_otel(received=True, observed=counts['accepted'] > 0, requests=1, validated_batches=1,
                     **{field + '_records': amount for field, amount in counts.items()},
                     **{reason + '_records': amount for reason, amount in diagnostics.items()})
             else:
                 otel.decode(raw)
-                self.server.record_otel(received=True, validated_batches=1, recording_disabled_batches=1)
+                self.server.record_otel(received=True, requests=1, validated_batches=1, recording_disabled_batches=1)
             # Empty OTLP ExportLogsServiceResponse; never echo raw records.
             return self.reply(200, {})
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
-            self.server.record_otel(invalid_batches=1)
+            self.server.record_otel(requests=1, invalid_batches=1)
             return self.reply(400, {'error': 'invalid_otlp_logs'})
         except (OSError, state.sqlite3.Error):
-            self.server.record_otel(storage_errors=1)
+            self.server.record_otel(requests=1, storage_errors=1)
             return self.reply(503, {'error': 'storage_unavailable'})
 
 

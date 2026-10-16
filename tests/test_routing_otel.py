@@ -1,5 +1,6 @@
 """Codex source-contract fixtures, privacy, dedup, setup CAS and real HTTP in CI."""
 from contextlib import redirect_stderr
+from email.message import Message
 import http.client
 import io
 import json
@@ -101,6 +102,29 @@ class OTelMetadata(unittest.TestCase):
         self.assertEqual(diagnostics,{'unsupported_version':1,'unsupported_event':1,'non_usage_response':1})
         self.assertEqual(state.totals(self.ledger.snapshot())['otel']['responses'],1)
         self.assertNotIn('synthetic-',json.dumps(diagnostics)+json.dumps(self.ledger.snapshot()))
+
+    def test_first_request_failure_persists_classification_even_inside_write_interval(self):
+        for outcome in ('unauthorized_requests','invalid_batches','storage_errors'):
+            with self.subTest(outcome=outcome):
+                store=dashboard.Store(self.root/outcome)
+                server=object.__new__(dashboard.Server)
+                server.store=store;server.otel_lock=threading.Lock();server.last_status_write=100
+                server.otel_capability=TOKEN;server.origin='http://127.0.0.1:49152'
+                store.write_receiver_status()
+                handler=object.__new__(dashboard.Handler);handler.server=server
+                raw=payload(record('start'));handler.rfile=io.BytesIO(raw)
+                handler.headers=Message()
+                for name,value in {'Host':'127.0.0.1:49152',otel.HEADER:TOKEN,
+                    'Content-Type':'application/json','Content-Length':str(len(raw))}.items():handler.headers[name]=value
+                if outcome=='unauthorized_requests':handler.headers.replace_header(otel.HEADER,'wrong')
+                if outcome=='invalid_batches':handler.headers.replace_header('Content-Type','invalid')
+                replies=[];handler.reply=lambda status,_body:replies.append(status)
+                with patch.object(dashboard.time,'monotonic',return_value=100), patch.object(store,'config',side_effect=PermissionError()):
+                    handler.otel_logs()
+                self.assertEqual(replies,[{'unauthorized_requests':403,'invalid_batches':415,'storage_errors':503}[outcome]])
+                persisted=json.loads((store.root/'receiver-status.json').read_text())
+                self.assertEqual(persisted['requests'],1);self.assertEqual(persisted[outcome],1)
+                self.assertIsNone(persisted['last_observation_at'])
 
     def test_new_resume_model_effort_and_interrupt_observations(self):
         otel.ingest(payload(record('start')),self.ledger)
