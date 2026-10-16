@@ -102,7 +102,7 @@ def main(argv=None):
 
                     stage = 'providers-navigation-refresh'
                     page.set_viewport_size({'width': 1440, 'height': 2000})
-                    page.get_by_role('link', name='Providers', exact=True).click()
+                    page.get_by_role('link', name='Models & providers', exact=True).click()
                     page.reload(wait_until='domcontentloaded')
                     expect(page.locator('#requests')).to_have_text('8')
                     expect(page.locator('#save')).to_be_enabled()
