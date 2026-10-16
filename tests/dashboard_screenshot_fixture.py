@@ -21,6 +21,7 @@ REVIEWED_FILES = {
     'scripts/routing_state.py': '6961b6c3a18c596750c3c35c0033dac3667f1b40',
     'scripts/routing_runtime.py': 'eb2a69397602d72af1160e8f0f55f50b8431c733',
     'scripts/routing_decision.py': '5b1d1c36408c0c0a0cf69f962c8832a9d1bf3f4b',
+    'scripts/routing_otel.py': '1967275a433dbec7b5440295873d7cc69516fad2',
 }
 
 

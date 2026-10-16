@@ -22,7 +22,7 @@ class ScreenshotFixture(unittest.TestCase):
             self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), metadata['sha256'])
 
     def test_capture_uses_exact_reviewed_sources(self):
-        self.assertEqual(len(reviewed_assets()), 7)
+        self.assertEqual(len(reviewed_assets()), 8)
 
     def test_synthetic_fixture_renders_expected_totals_without_providers(self):
         fixture = load_fixture()

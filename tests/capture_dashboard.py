@@ -81,6 +81,8 @@ def main(argv=None):
                     expect(page.locator('#requests')).to_have_text('8')
                     expect(page.locator('#executions')).to_have_text('4')
                     expect(page.locator('#connection')).to_have_text('Dashboard connected · 2s')
+                    expect(page.locator('#otel-receiver')).to_have_text('Receiver disabled')
+                    expect(page.locator('#otel-summary')).to_contain_text('0 sessions with retained OTel metadata; 0 model-response observations.')
                     expect(page).to_have_url(server.origin + '/')
                     expect(page.locator('#message')).to_be_empty()
                     expect(page.locator('#save')).to_be_enabled()

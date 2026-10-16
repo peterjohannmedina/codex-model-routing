@@ -29,6 +29,10 @@ $requiredFiles = @(
     (Join-Path 'scripts' 'routing_decision.py'),
     (Join-Path 'scripts' 'routing_runtime.py'),
     (Join-Path 'scripts' 'routing_state.py'),
+    (Join-Path 'scripts' 'routing_otel.py'),
+    (Join-Path 'scripts' 'routing_otel_setup.py'),
+    (Join-Path 'scripts' 'Prepare-RoutingTelemetry.ps1'),
+    (Join-Path 'scripts' 'Test-RoutingTelemetryAcl.ps1'),
     (Join-Path 'scripts' 'routing_dashboard.py'),
     (Join-Path 'scripts' 'collect_codex_json.py'),
     (Join-Path 'scripts' 'Start-RoutingDashboard.ps1'),
@@ -83,7 +87,8 @@ function Copy-RoutingPackage {
     foreach ($entry in Get-ChildItem -LiteralPath $From -Force) {
         if ($entry.Name -eq '.git' -or $entry.Name -eq '__pycache__' -or
             $entry.Name -like '*.pyc' -or $entry.Name -like '*.dpapi' -or $entry.Name -like '.env*' -or
-            $entry.Name -like 'usage.sqlite3*' -or $entry.Name -like '.dashboard-launch-*') { continue }
+            $entry.Name -like 'usage.sqlite3*' -or $entry.Name -like '*.capability' -or $entry.Name -like 'otel-config-before-*' -or
+            $entry.Name -eq 'otel-setup-receipt.json' -or $entry.Name -eq '.otel-setup.lock' -or $entry.Name -like '.dashboard-launch-*') { continue }
         if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Package links are not supported by this installer.' }
         if ($entry.PSIsContainer) {
             $childDestination = Join-Path $To $entry.Name

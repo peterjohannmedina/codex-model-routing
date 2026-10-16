@@ -73,7 +73,7 @@ def sanitize(raw):
     """No arbitrary text, endpoints, paths, payloads, headers, keys or hashes of prompts."""
     if not isinstance(raw, dict): raise ValueError('invalid_event')
     source = raw.get('source')
-    if source not in ('router', 'codex_exec'): raise ValueError('invalid_source')
+    if source not in ('router', 'codex_exec', 'codex_otel'): raise ValueError('invalid_source')
     result = {'source': source, 'session_id': identifier(raw.get('session_id')),
               'request_id': identifier(raw.get('request_id'), allow_unassigned=False), 'stage': raw.get('stage', 2)}
     result['session_source'] = raw.get('session_source')
@@ -87,6 +87,12 @@ def sanitize(raw):
         result[key] = count(raw.get(key))
     for key in ('local_enabled', 'decisions_enabled'):
         result[key] = raw.get(key) if type(raw.get(key)) is bool else None
+    if source == 'codex_otel':
+        modes = {'otel_session': ('session_observed', 'startup_configuration'),
+                 'otel_response': ('response_observed', 'otel_response_metadata')}
+        if (result['mode'] not in modes or result['session_source'] != 'codex_thread'
+                or (result['execution_status'], result['model_source']) != modes[result['mode']]):
+            raise ValueError('invalid_otel_observation')
     for key in ('evaluator_usage', 'downstream_usage'):
         result[key] = usage(raw.get(key))
     # Source-reported timestamps are optional; observation time is always local.
@@ -181,7 +187,17 @@ class Ledger:
 
 
 def totals(events, settings=LedgerSettings()):
+    otel = [e for e in events if e['source'] == 'codex_otel']
+    # Exec turn usage and OTel model-response usage can cover the same work.
+    # Never add them into one number without verified cross-feed correlation.
+    events = [e for e in events if e['source'] != 'codex_otel']
     result = {'requests': len(events), 'completed_executions': sum(e.get('execution_status') == 'completed' for e in events)}
+    responses = [e for e in otel if e.get('mode') == 'otel_response']
+    result['otel'] = {'sessions': len({e['session_id'] for e in otel}), 'responses': len(responses),
+                    'input_tokens': {'known': sum((e.get('downstream_usage') or {}).get('input_tokens') or 0 for e in responses),
+                        'unknown_responses': sum((e.get('downstream_usage') or {}).get('input_tokens') is None for e in responses)},
+                    'output_tokens': {'known': sum((e.get('downstream_usage') or {}).get('output_tokens') or 0 for e in responses),
+                        'unknown_responses': sum((e.get('downstream_usage') or {}).get('output_tokens') is None for e in responses)}}
     for name in ('evaluator', 'downstream'):
         reports = [e.get(name + '_usage') for e in events]
         result[name] = {key: {'known': sum((r.get(key) or 0) for r in reports if r),

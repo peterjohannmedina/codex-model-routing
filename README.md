@@ -67,7 +67,8 @@ Start a new Codex chat or restart Codex after installation so the updated skill 
 ![Routing dashboard overview with eight synthetic requests across two demo sessions, separate usage totals, activity chart, and labeled cost estimates.](docs/images/dashboard-overview.png)
 
 *Actual dashboard rendered in Chromium with synthetic demo data. The values are
-illustrative; no provider calls, real account activity or measured bills were used.*
+illustrative; no provider calls, real account activity or measured bills were used.
+These images document the initial dashboard release.*
 See [capture provenance and reproduction steps](references/dashboard-screenshots.md).
 
 <details>
@@ -107,6 +108,14 @@ export. Existing older/private adapters, arbitrary already-open TUI sessions and
 the ChatGPT app are unobserved. A recommendation does not switch a running CLI
 model or prove execution. See [setup, privacy and supported sources](references/dashboard.md)
 and the [dashboard requirements](references/dashboard-prd.md).
+
+New local Codex CLI 0.162.1 sessions can also appear automatically through an
+explicitly approved user-level OTel exporter. The local receiver retains only
+allowlisted metadata and shows startup settings and model-response usage separately
+from exec-turn totals. It is disabled by default; installation does not enable it
+or replace existing exporters. See [automatic session pickup, privacy, activation
+and undo](references/automatic-telemetry.md). Other app surfaces and ordinary
+ChatGPT chats remain unverified or unsupported.
 
 ## Usage
 

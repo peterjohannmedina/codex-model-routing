@@ -107,10 +107,12 @@ function renderEvents(events) {
   }
   for (const event of events.slice(0,100)) {
     const row=document.createElement('details'), summary=document.createElement('summary');
-    const values=[time(event.observed_at), (event.model || 'Model unobserved') + (event.effort ? ' · '+event.effort : ''), event.source === 'router' ? 'Router' : 'Codex exec', event.execution_status === 'completed' ? 'Executed · complete' : event.execution_status === 'started' ? 'In progress' : event.execution_status === 'failed' || event.error ? 'Failed / stopped' : 'Recommendation'];
+    const source=event.source==='codex_otel'?'Codex OTel':event.source==='router'?'Router':'Codex exec';
+    const status=event.mode==='otel_session'?'Session settings observed':event.mode==='otel_response'?'Model response observed':event.execution_status==='completed'?'Executed · complete':event.execution_status==='started'?'In progress':event.execution_status==='failed'||event.error?'Failed / stopped':'Recommendation';
+    const values=[time(event.observed_at), (event.model || 'Model unobserved') + (event.effort ? ' · '+event.effort : ''), source, status];
     values.forEach((value,i)=>{ const span=document.createElement('span'); span.textContent=value; if(i===2)span.className='event-source'; if(i===3)span.className='event-status'; summary.append(span); });
     const list=document.createElement('dl');
-    addDetail(list,'Session',event.session_id); addDetail(list,'Request',event.request_id);
+    addDetail(list,'Session',event.session_id); addDetail(list,event.source==='codex_otel'?'Observation (derived ID)':'Request',event.request_id);
     addDetail(list,'Session evidence',event.session_source || (event.session_id==='unassigned'?'Unassigned':'Caller-assigned UUID'));
     addDetail(list,'Source / mode',event.source+' / '+(event.mode || 'unknown'));
     addDetail(list,'Model evidence',event.model_source); addDetail(list,'Execution',event.execution_status);
@@ -142,7 +144,10 @@ function renderChart(days) {
 }
 function render(data, formFresh = true) {
   const totals=data.totals;
-  text('coverage-status',(data.config.observability.enabled?'Local recording enabled. ':'Local recording disabled. ')+(data.sessions.length?'Retained session labels: '+data.sessions.length+'. Historical records do not prove an active feed.':'No recorded sessions yet. Connect an explicit router command or Codex exec JSON stream.')+' Dashboard connection does not connect sessions.');
+  text('coverage-status',(data.config.observability.enabled?'Local recording enabled. ':'Local recording disabled. ')+(data.sessions.length?'Retained session labels: '+data.sessions.length+'. Historical records do not prove an active feed.':'No recorded sessions yet. Connect an instrumented command, exec JSON stream or approved new Codex CLI OTel export.')+' Dashboard connection does not connect sessions.');
+  const otel=totals.otel || {sessions:0,responses:0}, receiver=data.otel_receiver;
+  text('otel-receiver',receiver?.enabled?'Receiver enabled · exporter configuration unverified':'Receiver disabled');
+  text('otel-summary',otel.sessions+' sessions with retained OTel metadata; '+otel.responses+' model-response observations. '+(otel.responses?'Known input / output tokens: '+number(otel.input_tokens.known)+' / '+number(otel.output_tokens.known)+'; unknown input / output: '+otel.input_tokens.unknown_responses+' / '+otel.output_tokens.unknown_responses+'. ':'No response usage observed. ')+(receiver?.last_received_at?'Last accepted batch: '+time(receiver.last_received_at)+'.':'No accepted batch in this receiver process.'));
   text('requests',number(totals.requests)); text('executions',number(totals.completed_executions));
   for(const name of ['evaluator','downstream']) {
     const input=totals[name].input_tokens;

@@ -143,6 +143,7 @@ class UnixInstall(unittest.TestCase):
             (source / '.env').write_text('synthetic excluded fixture')
             (source / '.dashboard-launch-synthetic.html').write_text('synthetic private bootstrap fixture')
             (source / 'scripts' / 'synthetic.dpapi').write_text('synthetic excluded fixture')
+            (source / 'synthetic.capability').write_text('synthetic local capability fixture')
             env = dict(os.environ, CODEX_HOME=str(user / '.codex'), CODEX_ROUTING_PYTHON=sys.executable)
             install = subprocess.run(['sh', str(source / 'scripts' / 'install.sh'), '--user-root', str(user)],
                                      capture_output=True, text=True, env=env, timeout=30)
@@ -151,12 +152,14 @@ class UnixInstall(unittest.TestCase):
             self.assertFalse((skill / '.env').exists())
             self.assertFalse((skill / '.dashboard-launch-synthetic.html').exists())
             self.assertFalse((skill / 'scripts' / 'synthetic.dpapi').exists())
+            self.assertFalse((skill / 'synthetic.capability').exists())
             self.assertTrue((user / '.codex' / 'AGENTS.md').exists())
             self.assertFalse((user / '.codex' / 'agents' / 'muse-worker.toml').exists())
             self.assertFalse((user / '.codex' / 'routing').exists())
             for name in ('Invoke-Routing.ps1', 'Set-RoutingApiKey.ps1', 'routing_runtime.py', 'invoke-routing.sh',
                          'routing_state.py', 'routing_dashboard.py', 'collect_codex_json.py',
-                         'Resolve-RoutingPython.ps1', 'Start-RoutingDashboard.ps1'):
+                         'Resolve-RoutingPython.ps1', 'Start-RoutingDashboard.ps1', 'routing_otel.py',
+                         'routing_otel_setup.py', 'Prepare-RoutingTelemetry.ps1', 'Test-RoutingTelemetryAcl.ps1'):
                 self.assertTrue((skill / 'scripts' / name).exists())
             result = subprocess.run(['sh', str(skill / 'scripts' / 'invoke-routing.sh'),
                 str(skill / 'assets' / 'routing-packet.example.json'), '--offline'],
@@ -169,3 +172,8 @@ class UnixInstall(unittest.TestCase):
                 capture_output=True, text=True, env=env, timeout=15)
             self.assertEqual(collected.returncode, 0, collected.stderr)
             self.assertTrue((user / '.codex' / 'routing' / 'usage.sqlite3').exists())
+            planned = subprocess.run(['sh',str(skill/'scripts/invoke-routing.sh'),'telemetry-setup'],
+                capture_output=True,text=True,env=env,timeout=15)
+            self.assertEqual(planned.returncode,0,planned.stderr)
+            self.assertTrue(json.loads(planned.stdout)['requires_explicit_approval'])
+            self.assertFalse((user/'.codex/routing/otel-receiver.capability').exists())
