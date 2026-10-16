@@ -65,7 +65,7 @@ def status(paths):
     if not installed:return {'installed':False,'running':False}
     result={'installed':True,'revision':installed['revision'],'version':installed['version'],
         'skill_path':str(paths.skill),'skill_discovery_file_present':(paths.skill/'SKILL.md').is_file(),
-        'integrity_ok':not installation.integrity(paths,installed),'login_startup':installed['login_startup'],
+        'integrity_ok':not installation.integrity(paths,installed),**installation.launcher_state(paths,installed),
         'otel_receiver_opt_in':installed['otel_receiver'],'running':False,'url':None}
     try:
         live=controller(paths)

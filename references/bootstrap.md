@@ -88,6 +88,9 @@ Login startup defaults off. Explicitly choose `install/update --login-startup`
 an XDG autostart entry on Linux, or a LaunchAgent plist on macOS. It takes effect
 at the next login; the bootstrap does not invoke a system service manager or alter
 security permissions. User-edited launcher files are preserved.
+Status distinguishes a requested login choice from verified installed launcher
+files. Existing unmanaged or edited launchers are preserved and reported as
+conflicts; a conflict is not reported as successful startup configuration.
 
 Linux entries follow the [Desktop Entry Exec rules](https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html)
 and [XDG autostart specification](https://specifications.freedesktop.org/autostart/latest/).
@@ -105,7 +108,7 @@ Managed control is disabled on the ordinary foreground dashboard. The manager
 creates an owner-private control capability only on explicit background start.
 `/api/lifecycle` accepts status/open/stop on loopback with exact Host, one control
 header, no browser Origin/Fetch headers, uncompressed JSON and a 512-byte limit.
-Browser and OTel capabilities grant no control access; control grants no data API
+Browser and OTel capabilities grant no control access; control grants no direct data API
 access. Reopening rotates only browser bootstrap state, not the running process.
 Stop never trusts a PID alone and never force-kills an unrelated listener.
 

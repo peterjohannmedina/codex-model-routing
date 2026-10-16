@@ -123,6 +123,14 @@ class InstallTransactions(Fixture):
         self.install(shortcuts=False,login=False)
         self.assertTrue(all(not Path(name).exists() for name in owned))
 
+    def test_conflicting_login_launcher_is_preserved_and_not_reported_configured(self):
+        specs=platform.launcher_specs(self.user,self.paths.codex,sys.executable,False,True)
+        path=specs[0][0];path.parent.mkdir(parents=True);path.write_bytes(b'synthetic unrelated launcher')
+        result=self.install(login=True)
+        self.assertTrue(result['login_startup_requested']);self.assertFalse(result['login_startup_configured'])
+        self.assertTrue(result['shortcut_conflicts']);self.assertEqual(path.read_bytes(),b'synthetic unrelated launcher')
+        self.assertFalse(bootstrap.status(self.paths)['login_startup_configured'])
+
     def test_unverified_private_state_blocks_install(self):
         with patch.object(platform,'private',return_value=False):
             with self.assertRaises(ValueError):self.install()

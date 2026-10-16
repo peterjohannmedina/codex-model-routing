@@ -43,6 +43,7 @@ def launcher_specs(user, codex, python, shortcuts=False, login=False, platform=s
     arguments = [str(python), '-B', str(script)]
     tail = ['--user-root', str(user), '--codex-home', str(codex)]
     result = []
+    if not shortcuts and not login:return result
     if platform == 'win32':
         # GetFolderPath honors redirected user folders; fixtures never touch them.
         if user.resolve() == Path.home().resolve():

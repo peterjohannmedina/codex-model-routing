@@ -178,9 +178,10 @@ def install(paths, source=SOURCE, repair=False, shortcuts=None, login=None, port
                'otel_receiver':(before or {}).get('otel_receiver',False),'shortcut_files':(before or {}).get('shortcut_files',{})}
     if not 0 <= desired['port'] <= 65535: raise ValueError('invalid_port')
     shortcuts_healthy = before and all(Path(n).is_file() and sha(Path(n).read_bytes())==v for n,v in before.get('shortcut_files',{}).items())
+    shortcuts_healthy = shortcuts_healthy and all(p.is_file() for p,_,_ in platform.launcher_specs(paths.user,paths.codex,sys.executable,settings['shortcuts'],settings['login']))
     same = before and all(before.get(k)==v for k,v in desired.items() if k not in ('shortcut_files','preserved_user_files')) and not integrity(paths,before) and shortcuts_healthy and not before.get('shortcut_errors')
     if plan_only:return {'changed':not bool(same),'revision':revision}
-    if same: return {'installed':True,'changed':False,'revision':revision,'preserved_user_files':preserved}
+    if same: return {'installed':True,'changed':False,'revision':revision,'preserved_user_files':preserved,**launcher_state(paths,before)}
     backup_id = str(time.time_ns()) + '-' + secrets.token_hex(4)
     backup = paths.service/'backups'/backup_id
     originals = {}
@@ -216,19 +217,19 @@ def install(paths, source=SOURCE, repair=False, shortcuts=None, login=None, port
         else: paths.receipt.unlink(missing_ok=True)
         raise
     return {'installed':True,'changed':True,'revision':revision,'backup_id':backup_id,'preserved_user_files':preserved,
-            'login_startup':desired['login_startup'],'shortcuts':desired['shortcuts_enabled'],'shortcut_errors':desired.get('shortcut_errors',[]),
+            'shortcuts_requested':desired['shortcuts_enabled'],**launcher_state(paths,desired),
             'discovery':'installed SKILL.md; start a new Codex chat if its skill catalog has not refreshed'}
 
 
 def sync_shortcuts(paths, installed):
     desired = platform.launcher_specs(paths.user,paths.codex,installed['python'],installed['shortcuts_enabled'],installed['login_startup'])
-    previous = dict(installed.get('shortcut_files',{})); kept={}; errors=[]
+    previous = dict(installed.get('shortcut_files',{})); kept={}; errors=[]; conflicts=[]
     allowed = shortcut_allowed(paths,installed)
     for path, kind, body in desired:
         path=path.absolute(); name=str(path)
         if name not in allowed or path.resolve()!=path.absolute(): raise ValueError('unsafe_shortcut_destination')
         if path.is_file():
-            if name not in previous or sha(path.read_bytes())!=previous[name]: continue
+            if name not in previous or sha(path.read_bytes())!=previous[name]:conflicts.append(path.name);continue
             kept[name]=previous[name]; continue
         path.parent.mkdir(parents=True,exist_ok=True)
         try:
@@ -241,7 +242,17 @@ def sync_shortcuts(paths, installed):
         if name not in kept and name in allowed and path.is_file() and sha(path.read_bytes())==expected: path.unlink()
     installed['shortcut_files']=kept
     installed['shortcut_errors']=errors
+    installed['shortcut_conflicts']=conflicts
     atomic(paths.receipt,encoded(installed))
+
+
+def launcher_state(paths,installed):
+    requested=installed['login_startup']
+    specs=platform.launcher_specs(paths.user,paths.codex,installed['python'],False,requested)
+    owned=installed.get('shortcut_files',{})
+    configured=bool(specs) and all(str(p.absolute()) in owned and p.is_file() and sha(p.read_bytes())==owned[str(p.absolute())] for p,_,_ in specs)
+    return {'login_startup_requested':requested,'login_startup_configured':configured,
+            'shortcut_errors':installed.get('shortcut_errors',[]),'shortcut_conflicts':installed.get('shortcut_conflicts',[])}
 
 
 def rollback(paths):
