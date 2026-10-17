@@ -51,6 +51,11 @@ def load_fixture():
         if event['session_id'] not in sessions or event['request_id'] != 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa' + str(index):
             raise ValueError('demo_identifiers_required')
         if not state.timestamp(event['observed_at']): raise ValueError('fixture_timestamp_required')
+        if event.get('selected_candidate_id'):
+            selected = next((c for c in event.get('admitted_choices', []) if c['id'] == event['selected_candidate_id']), None)
+            if (not selected or any(event.get(k) != selected[k] for k in ('model', 'effort', 'adapter'))
+                    or event.get('selected_action') != selected['action']):
+                raise ValueError('fixture_selected_route_mismatch')
     return fixture
 
 
