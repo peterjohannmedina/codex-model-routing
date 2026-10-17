@@ -47,7 +47,7 @@ class WindowsShortcutLifecycle(Fixture):
         self.assertEqual(first['instance_id'],again['instance_id'])
         self.authenticate_data()
         stale_run=self.paths.run.read_bytes();stale_cap=self.paths.cap.read_bytes()
-        bootstrap.stop(self.paths)
+        self.stop_owned()
         self.assertFalse(self.paths.run.exists())
         # Simulate leftovers from an unclean exit without killing any process.
         installation.atomic(self.paths.run,stale_run);installation.atomic(self.paths.cap,stale_cap)
@@ -72,8 +72,26 @@ class WindowsShortcutLifecycle(Fixture):
         finally:connection.close()
 
     def stop_owned(self):
-        try:bootstrap.stop(self.paths)
-        except (OSError,ValueError):pass
+        # The fixture receiver was launched by a separate pythonw process, so
+        # bootstrap._children has no Popen to wait on. run.json removal means
+        # cleanup completed, but Windows can retain its cwd until process exit.
+        # Hold a wait-only handle before authenticated stop; never kill a PID.
+        if bootstrap.controller(self.paths) is None:return
+        import ctypes
+        from ctypes import wintypes
+        kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+        kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+        kernel.OpenProcess.restype=wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
+        kernel.WaitForSingleObject.restype=wintypes.DWORD
+        kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+        kernel.CloseHandle.restype=wintypes.BOOL
+        handle=kernel.OpenProcess(0x00100000,False,installation.read_json(self.paths.run)['pid'])
+        if not handle:raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            bootstrap.stop(self.paths)
+            self.assertEqual(kernel.WaitForSingleObject(handle,5000),0,'Fixture receiver must exit before root cleanup')
+        finally:kernel.CloseHandle(handle)
 
 
 if __name__=='__main__':unittest.main()
