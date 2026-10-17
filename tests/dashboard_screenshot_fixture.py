@@ -10,18 +10,18 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import routing_dashboard as dashboard
 import routing_state as state
 
-REVIEWED_SOURCE = '551f247554725edec16bb461c8a4c09f454e5c54'
+REVIEWED_SOURCE = '1edc53c6917f0a0a4b9ad97c8822c05f998eb023'
 FIXTURE = ROOT / 'tests/fixtures/dashboard-screenshot.json'
 # Git blob IDs from REVIEWED_SOURCE; no history fetch is needed in shallow CI.
 REVIEWED_FILES = {
-    'assets/dashboard/index.html': 'a9960b3f8bdbc454ddae28ccc2f630e3d1ea4519',
-    'assets/dashboard/app.js': '41dd3c3a07dc0dea687a3c77a48d7616ed8b7a52',
+    'assets/dashboard/index.html': '469a45291eb0dd94be4b3223d01adde428a92ed4',
+    'assets/dashboard/app.js': '24fab5f7944adab0dbe65afd807ac886fc0b4733',
     'assets/dashboard/style.css': 'b14911924be433b177ec9826e9763d838f69d9c9',
     'assets/dashboard/router-mark.svg': '26ccfb0cb47968c96187a1c9da5cf66f9b7122d1',
     'scripts/routing_dashboard.py': '48dca2d21402fa0aa890a4df2b8bcbe6c95faea0',
-    'scripts/routing_state.py': 'c8576bb198b7f1dc3bf04039bf03cd07380c6121',
-    'scripts/routing_runtime.py': '763e3d60cc62ea703ea648231b1a70047e8c7599',
-    'scripts/routing_decision.py': '2ab51e0770ed3f9111e23c7a0eb6499d0dc4d4c2',
+    'scripts/routing_state.py': 'd0f5e9440a412ef86064293f3346b0826b2eeed9',
+    'scripts/routing_runtime.py': '50eed09f84c16d113b112dfea29141a7aca5d06a',
+    'scripts/routing_decision.py': 'e5bd70de5011c21f5fc497b56e0c29e3a95342e0',
     'scripts/routing_otel.py': '948c3a56a3d6771ff063fb86c00e5c2e08c7feb5',
     'scripts/routing_catalog.py': 'eac2155ea005ec18afe168d8fd7f4e8f639c4f21',
 }
