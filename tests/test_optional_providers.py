@@ -37,6 +37,19 @@ def catalog(*_):
 
 
 class OptionalProviders(unittest.TestCase):
+    def test_local_execution_keeps_selection_timing_separate_from_execution(self):
+        clock = [0.0]
+        def worker(method, *_):
+            if method == 'GET': return catalog()
+            clock[0] = .2
+            return b'{"choices":[{"message":{"content":"synthetic completed result"}}]}'
+        with patch('time.monotonic',side_effect=lambda:clock[0]):
+            result = runtime.execute_local(local_packet(),configuration(True),environment={},
+                transport=worker,allow_local_inference=True)
+        self.assertEqual(result['execution']['status'],'completed')
+        self.assertEqual(result['provenance']['elapsed_ms'],200)
+        self.assertEqual(result['provenance']['selection_elapsed_ms'],0)
+
     def test_all_four_provider_combinations(self):
         for local in (False, True):
             for decisions in (False, True):

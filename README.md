@@ -278,3 +278,10 @@ Windows launcher. The launcher reuses an existing legacy encrypted store after
 consent and admission, without moving credentials. Recorded status/reason metadata
 distinguishes blocked, attempted and successful evaluation. See
 [Decisions invocation and tiny validation](references/decisions-invocation.md).
+
+Expand a Router row in **Activity** to inspect decision metadata, alternatives,
+confidence and latency. Older rows remain explicitly incomplete. Confidence is
+not measured task quality. The [benchmarking guide](references/decision-benchmarking.md)
+includes a strict offline planner/comparator for rules, fixed Sol and Decisions,
+with synthetic examples and a caller-supplied task-outcome schema. It makes no
+model calls and does not claim that a successful selection proves task quality.

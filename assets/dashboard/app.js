@@ -184,6 +184,19 @@ function renderEvents(events) {
     addDetail(list,'Evaluator status / reason',(event.evaluator_status || 'Unobserved')+' / '+(event.evaluator_reason || 'None recorded'));
     addDetail(list,'Credential delivery',event.credential_source || 'Unobserved');
     addDetail(list,'Evaluator attempts',number(event.evaluator_attempts));
+    if(event.source==='router'){
+      addDetail(list,'Selected candidate / action',(event.selected_candidate_id || 'Not recorded')+' / '+(event.selected_action || 'Not recorded'));
+      addDetail(list,'Evaluator model / policy',(event.evaluator_model || 'Not recorded')+' / '+(event.policy_version || 'Not recorded'));
+      addDetail(list,'Evaluator confidence (not task quality)',typeof event.confidence==='number'?event.confidence.toFixed(3):'Not recorded');
+      const choices=event.admitted_choices?.map(c=>c.id+': '+c.model+' / '+c.effort+' / '+c.action+' / '+c.adapter+
+        (typeof event.choice_probabilities?.[c.id]==='number'?' (probability '+event.choice_probabilities[c.id].toFixed(3)+')':''));
+      addDetail(list,'Admitted alternatives',choices?.join('; ') || 'Not recorded');
+      addDetail(list,'Attempted / succeeded / fallback',[event.evaluator_attempted,event.evaluator_succeeded,event.evaluator_fallback].map(v=>typeof v==='boolean'?String(v):'Unknown').join(' / '));
+      addDetail(list,'Provider selection / router total latency (ms)',number(event.selection_elapsed_ms)+' / '+number(event.elapsed_ms));
+      const input=event.evaluator_usage?.input_tokens;
+      addDetail(list,'Evaluator base-rate estimate (USD)',typeof input==='number'?(input*0.10/1e6).toFixed(8)+'; billed cost unknown':'Unknown');
+      addDetail(list,'Task quality / downstream link','Not recorded; session UUID alone does not link a task outcome');
+    }
     addDetail(list,'Evaluator input / output',number(event.evaluator_usage?.input_tokens)+' / '+number(event.evaluator_usage?.output_tokens));
     addDetail(list,'Downstream attempts',number(event.downstream_attempts));
     addDetail(list,'Downstream input / output',number(event.downstream_usage?.input_tokens)+' / '+number(event.downstream_usage?.output_tokens));

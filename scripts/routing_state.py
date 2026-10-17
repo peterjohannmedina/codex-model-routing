@@ -36,6 +36,23 @@ def usage(value):
     return result if any(v is not None for v in result.values()) else None
 
 
+def probability(value):
+    return value if type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value) else None
+
+
+def choices(value):
+    """Only bounded route metadata; never candidate descriptions or task text."""
+    if not isinstance(value, list) or not 1 <= len(value) <= 32: return None
+    result, seen = [], set()
+    for item in value:
+        if not isinstance(item, dict): return None
+        row = {key: label(item.get(key)) for key in ('id', 'model', 'effort', 'adapter', 'action')}
+        if (any(v is None for v in row.values()) or row['id'] in seen
+                or row['action'] not in ('stay', 'switch', 'delegate')): return None
+        seen.add(row['id']); result.append(row)
+    return result
+
+
 def timestamp(value):
     try:
         parsed = dt.datetime.fromisoformat(value) if isinstance(value, str) and len(value) <= 40 else None
@@ -82,9 +99,18 @@ def sanitize(raw):
     for key in ('model', 'effort', 'adapter', 'override_model', 'override_effort', 'fallback_reason',
                 'local_status', 'execution_status', 'model_source', 'mode', 'error', 'stream_status',
                 'execution_adapter', 'execution_model', 'execution_effort', 'requested_provider', 'used_provider',
-                'evaluator_status', 'evaluator_reason', 'credential_source'):
+                'evaluator_status', 'evaluator_reason', 'credential_source', 'selected_candidate_id',
+                'evaluator_model', 'policy_version'):
         result[key] = label(raw.get(key))
-    for key in ('evaluator_attempts', 'downstream_attempts', 'command_items', 'elapsed_ms'):
+    result['selected_action'] = raw.get('selected_action') if raw.get('selected_action') in ('stay', 'switch', 'delegate') else None
+    result['confidence'] = probability(raw.get('confidence'))
+    result['admitted_choices'] = choices(raw.get('admitted_choices'))
+    distribution = raw.get('choice_probabilities')
+    ids = {c['id'] for c in result['admitted_choices'] or []}
+    result['choice_probabilities'] = (dict(distribution) if ids and isinstance(distribution, dict)
+        and set(distribution) == ids and all(probability(v) is not None for v in distribution.values())
+        and abs(sum(distribution.values()) - 1) <= 0.01 else None)
+    for key in ('evaluator_attempts', 'downstream_attempts', 'command_items', 'elapsed_ms', 'selection_elapsed_ms'):
         result[key] = count(raw.get(key))
     for key in ('local_enabled', 'decisions_enabled', 'evaluator_attempted', 'evaluator_succeeded', 'evaluator_fallback'):
         result[key] = raw.get(key) if type(raw.get(key)) is bool else None
