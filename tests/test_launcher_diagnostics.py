@@ -88,5 +88,13 @@ class LauncherDiagnostics(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'^private_state_probe_execution_failed$'):
                     bootstrap.start(paths)
 
+    def test_stop_marker_is_removed_after_old_control_capability(self):
+        order=[]
+        run=SimpleNamespace(is_file=lambda:True,unlink=lambda:order.append('run'))
+        cap=SimpleNamespace(unlink=lambda **kwargs:order.append('cap'))
+        with patch.object(installation,'read_json',return_value={'instance_id':'owned'}):
+            bootstrap.cleanup_server(SimpleNamespace(run=run,cap=cap),'owned',None)
+        self.assertEqual(order,['cap','run'])
+
 
 if __name__=='__main__':unittest.main()

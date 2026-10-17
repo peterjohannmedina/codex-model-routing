@@ -205,7 +205,10 @@ def build_server(paths,identity):
 def cleanup_server(paths,identity,server):
     if server:server.server_close()
     if paths.run.is_file() and installation.read_json(paths.run).get('instance_id')==identity:
-        paths.run.unlink();paths.cap.unlink(missing_ok=True)
+        # run.json is the stop-completion marker. Remove it last so a caller
+        # cannot observe "stopped", restart, then lose its new capability to
+        # the old receiver's remaining cleanup.
+        paths.cap.unlink(missing_ok=True);paths.run.unlink()
 
 
 def serve(paths, identity):
