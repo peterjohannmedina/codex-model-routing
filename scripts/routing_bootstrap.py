@@ -37,6 +37,8 @@ ERROR_HINTS={
     'approved_telemetry_setup_required':'Telemetry needs its separate approved setup. Installation and start never activate a Codex exporter.',
     'approved_telemetry_scope_changed':'Telemetry differs from its approved setup. Review it; do not replace exporters automatically.',
     'receiver_start_not_confirmed_no_policy_bypass':'Background startup was not confirmed. Check status and loopback permissions; no security workaround was attempted.',
+    'receiver_start_failed':'The background receiver could not start. Review dependency, permission and listener diagnostics in an approved context; no policy bypass was attempted.',
+    'receiver_start_failed_see_status':'The background receiver could not start. Review dependency, permission and listener diagnostics in an approved context; no policy bypass was attempted.',
     'controller_rejected_or_unmanaged_server':'The listener is not the authenticated managed instance. It was not stopped or replaced.',
     'not_installed':'Install the skill with the supported bootstrap first.',
     'install_skill_first':'Install the skill with the supported bootstrap first.',
@@ -168,7 +170,7 @@ def start(paths, otel=None):
                     if child is not None:
                         try:child.wait(timeout=1)
                         except subprocess.TimeoutExpired:pass
-                    raise ValueError('receiver_start_failed_see_status')
+                    raise ValueError(value['error'] if value['error'] in ERROR_HINTS else 'receiver_start_failed_see_status')
                 live=controller(paths)
                 if live:return {'running':True,'changed':True,**live}
         time.sleep(.05)
@@ -212,8 +214,9 @@ def serve(paths, identity):
     try:
         server=build_server(paths,identity)
         server.serve_forever(poll_interval=.1)
-    except (OSError,ValueError,KeyError,TypeError):
-        installation.atomic(paths.service/'ready.json',installation.encoded({'instance_id':identity,'error':'receiver_start_failed'}))
+    except (OSError,ValueError,KeyError,TypeError) as error:
+        code=str(error) if str(error) in ERROR_HINTS else 'receiver_start_failed'
+        installation.atomic(paths.service/'ready.json',installation.encoded({'instance_id':identity,'error':code}))
         return 2
     finally:
         cleanup_server(paths,identity,server)

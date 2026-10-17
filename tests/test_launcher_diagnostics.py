@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import sys
 from types import SimpleNamespace
 import unittest
@@ -13,6 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import routing_bootstrap as bootstrap
 import routing_platform as platform
+import routing_installation as installation
 
 
 class LauncherDiagnostics(unittest.TestCase):
@@ -60,6 +62,31 @@ class LauncherDiagnostics(unittest.TestCase):
             code=bootstrap.main(['open','--user-root',str(ROOT.parent/'synthetic-user')])
         self.assertEqual(code,2);open_dashboard.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())['error'],'private_state_probe_execution_failed')
+
+    def test_detached_child_preserves_only_fixed_permission_failure_codes(self):
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            paths=installation.Paths(Path(directory)/'user')
+            for message,expected in [('private_state_probe_execution_failed','private_state_probe_execution_failed'),
+                                     ('sk-private/path must not escape','receiver_start_failed')]:
+                with patch.object(bootstrap,'build_server',side_effect=ValueError(message)):
+                    self.assertEqual(bootstrap.serve(paths,'synthetic-instance'),2)
+                self.assertEqual(installation.read_json(paths.service/'ready.json')['error'],expected)
+                self.assertNotIn('sk-private',(paths.service/'ready.json').read_text())
+
+    def test_parent_start_preserves_fixed_child_denial_without_network_or_real_child(self):
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            paths=installation.Paths(Path(directory)/'user')
+            installed={'python':sys.executable,'port':8765,'otel_receiver':False,'revision':'synthetic'}
+            def child(*args,**kwargs):
+                identity=args[0][-1]
+                installation.atomic(paths.service/'ready.json',installation.encoded(
+                    {'instance_id':identity,'error':'private_state_probe_execution_failed'}))
+                return SimpleNamespace(wait=lambda **kwargs:0)
+            with patch.object(installation,'receipt',return_value=installed),patch.object(installation,'integrity',return_value=[]), \
+                 patch.object(bootstrap,'controller',return_value=None),patch.object(bootstrap.socket,'socket'), \
+                 patch.object(bootstrap.platform,'detached',return_value={}),patch.object(bootstrap.subprocess,'Popen',side_effect=child):
+                with self.assertRaisesRegex(ValueError,'^private_state_probe_execution_failed$'):
+                    bootstrap.start(paths)
 
 
 if __name__=='__main__':unittest.main()
