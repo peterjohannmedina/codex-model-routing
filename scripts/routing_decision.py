@@ -402,6 +402,11 @@ def recommend(request: Request, provider: DecisionProvider) -> dict:
         selected = request.fallback
         used = "rules"
         reason = str(error)
+        if reason not in {'redirect','response_too_large','network','transport_busy','transport_error','timeout',
+                          'invalid_choice_count','api_not_authorized','missing_api_key','request_too_large',
+                          'refusal','low_confidence','invalid_response','inadmissible_choice'} and not (
+                reason.startswith('http_') and len(reason)==8 and reason[5:].isdigit() and 100<=int(reason[5:])<=599):
+            reason = 'provider_error'
     except Exception:
         selected = request.fallback
         used = "rules"
@@ -420,40 +425,11 @@ def load_file(path: Path) -> object:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("packet", type=Path)
-    parser.add_argument("--overrides", type=Path, help="trusted direct-user overrides only")
-    parser.add_argument("--provider", choices=("rules", "decisions"), default="rules")
-    parser.add_argument("--allow-api", action="store_true", help="explicit metered-call consent")
-    parser.add_argument("--timeout-seconds", type=float, default=3.0)
-    parser.add_argument("--minimum-confidence", type=float, default=0.6)
-    parser.add_argument("--config", type=Path, help="routing settings, including persisted native eligibility")
-    args = parser.parse_args(argv)
-    try:
-        overrides = Overrides.parse(load_file(args.overrides)) if args.overrides else Overrides()
-        import routing_runtime as runtime
-        import routing_catalog as catalog
-        path = args.config or Path(os.environ.get('CODEX_HOME',Path.home()/'.codex'))/'routing/config.json'
-        if args.config and not path.is_file(): raise RoutingError('config_not_found')
-        config = runtime.Config.parse(load_file(path)) if path.is_file() else runtime.Config()
-        packet = catalog.restrict(load_file(args.packet), config.native.allowed_models, catalog.load(path.parent))
-        request = Request.parse(packet, overrides)
-        block = runtime.evaluator_block_reason(config) if args.provider=='decisions' else None
-        provider = (RulesProvider() if args.provider == "rules" or block else DecisionsProvider(
-            api_key=os.environ.get("OPENAI_API_KEY", ""), allow_api=args.allow_api,
-            timeout_seconds=args.timeout_seconds, minimum_confidence=args.minimum_confidence))
-        result = recommend(request, provider)
-        if block: result['provenance'].update(requested_provider='decisions',fallback_reason=block)
-        print(json.dumps(result, allow_nan=False))
-        return 0
-    except RoutingError as error:
-        print(json.dumps({"error": "invalid_routing_configuration", "reason": str(error)}))
-        return 2
-    except (ValueError, OSError, TypeError, RecursionError):
-        # Bad trusted inputs cannot be repaired by a network model. Do not print
-        # arbitrary input, file content, API errors, or credential-bearing paths.
-        print(json.dumps({"error": "invalid_routing_configuration"}))
-        return 2
+    # One CLI policy/observability path. Omitted --provider honors saved settings;
+    # explicit rules/decisions remains an invocation override. Embedding classes
+    # above remain available independently, without automatic dispatch.
+    import routing_runtime as runtime
+    return runtime.main(argv)
 
 
 if __name__ == "__main__":

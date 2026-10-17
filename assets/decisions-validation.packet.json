@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "summary": "Choose a route for a short code-reading check with a clear expected result.",
+  "available_models": {
+    "gpt-6.1-sol": ["low"],
+    "gpt-6-luna": ["high"]
+  },
+  "conservation_mode": false,
+  "fallback_id": "stay_sol",
+  "candidates": [
+    {"id": "stay_sol", "action": "stay", "model": "gpt-6.1-sol", "effort": "low"},
+    {"id": "use_luna", "action": "delegate", "model": "gpt-6-luna", "effort": "high"}
+  ]
+}

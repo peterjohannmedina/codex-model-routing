@@ -180,6 +180,9 @@ function renderEvents(events) {
     addDetail(list,'Override model / effort',(event.override_model || 'Automatic')+' / '+(event.override_effort || 'Automatic'));
     addDetail(list,'Fallback / error',event.fallback_reason || event.error || 'None recorded');
     addDetail(list,'Local observation',event.local_status || 'Unobserved');
+    addDetail(list,'Decision provider requested / used',(event.requested_provider || 'Unobserved')+' / '+(event.used_provider || 'Unobserved'));
+    addDetail(list,'Evaluator status / reason',(event.evaluator_status || 'Unobserved')+' / '+(event.evaluator_reason || 'None recorded'));
+    addDetail(list,'Credential delivery',event.credential_source || 'Unobserved');
     addDetail(list,'Evaluator attempts',number(event.evaluator_attempts));
     addDetail(list,'Evaluator input / output',number(event.evaluator_usage?.input_tokens)+' / '+number(event.evaluator_usage?.output_tokens));
     addDetail(list,'Downstream attempts',number(event.downstream_attempts));
@@ -257,8 +260,10 @@ function render(data, formFresh = true) {
   for(const name of ['decisions','local']){
     const enabled=data.config[name].enabled, configured=name==='decisions'||Boolean(data.config.local.model&&data.config.local.base_url);
     text(name+'-configured',enabled?(configured?'Enabled · settings only':'Enabled · unconfigured'):'Disabled');byId(name+'-configured').className='pill'+(enabled?'':' off');
-    const observed=data.events.find(e=>name==='local'?e.local_status&&e.local_status!=='disabled':e.evaluator_attempts>0||e.fallback_reason==='missing_api_key');
-    text(name+'-observed',observed?'Last observation: '+(name==='local'?observed.local_status:observed.fallback_reason||'response received')+' · '+time(observed.observed_at)+' (historical)':'Last observation: unobserved');
+    const observed=data.events.find(e=>name==='local'?e.local_status&&e.local_status!=='disabled':e.requested_provider==='decisions'||e.evaluator_attempts>0||e.fallback_reason==='missing_api_key');
+    const outcome=observed&&(name==='local'?observed.local_status:observed.evaluator_status?
+      observed.evaluator_status+(observed.evaluator_reason?' / '+observed.evaluator_reason:''):observed.fallback_reason||'response received');
+    text(name+'-observed',observed?'Last observation: '+outcome+' · '+time(observed.observed_at)+' (historical)':'Last observation: unobserved');
   }
   if(!dirty&&!saving&&formFresh)fill(data.config,data.config_version);
   renderCatalog(data);renderEvents(data.events);renderChart(data.daily);

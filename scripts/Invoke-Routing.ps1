@@ -14,6 +14,7 @@ param(
     [switch]$NoLedger,
     [Nullable[int]]$MaxDecisionInputTokens,
     [Nullable[decimal]]$MaxDecisionCostUsd,
+    [Nullable[double]]$DecisionTimeoutSeconds,
     [string]$PythonPath,
     [string]$SkillRoot,
     [string]$CredentialPath,
@@ -39,7 +40,6 @@ if (-not $PythonPath) {
     if (-not $PythonPath) { throw 'Python 3.11+ is required. Set CODEX_ROUTING_PYTHON to an existing interpreter; no runtime was installed.' }
 }
 if (-not $SkillRoot) { $SkillRoot = Split-Path -Parent $PSScriptRoot }
-if (-not $CredentialPath) { $CredentialPath = Join-Path $routingCodexRoot 'routing\openai-key.dpapi' }
 if (-not $PreflightScriptPath) { $PreflightScriptPath = Join-Path $SkillRoot 'scripts\routing_runtime.py' }
 if (-not $RoutingScriptPath) { $RoutingScriptPath = Join-Path $SkillRoot 'scripts\routing_runtime.py' }
 
@@ -134,6 +134,11 @@ if ($null -ne $MaxDecisionInputTokens) { $routingPreflightArguments += @('--max-
 if ($null -ne $MaxDecisionCostUsd) { $routingPreflightArguments += @('--max-decision-cost-usd', $MaxDecisionCostUsd.ToString([Globalization.CultureInfo]::InvariantCulture)) }
 if ($null -ne $MaxDecisionInputTokens) { $routingArguments += @('--max-decision-input-tokens', [string]$MaxDecisionInputTokens) }
 if ($null -ne $MaxDecisionCostUsd) { $routingArguments += @('--max-decision-cost-usd', $MaxDecisionCostUsd.ToString([Globalization.CultureInfo]::InvariantCulture)) }
+if ($null -ne $DecisionTimeoutSeconds) {
+    $routingTimeout = $DecisionTimeoutSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)
+    $routingPreflightArguments += @('--timeout-seconds', $routingTimeout)
+    $routingArguments += @('--timeout-seconds', $routingTimeout)
+}
 # Preflight never loads DPAPI or calls Decisions. It may authenticate the
 # explicitly configured local readiness GET, including with OPENAI_API_KEY.
 # Preserve ambient credentials for that configured use; Python enforces the
@@ -156,7 +161,23 @@ if (-not $routingPreflight.preflight.may_load_credential) {
 
 # Reached only after admission, hard ceilings and explicit consent. Never invoke
 # this branch without authority for spending and credential-loader use.
-if (-not (Test-Path -LiteralPath $CredentialPath -PathType Leaf)) {
+# An explicitly supplied store wins. Otherwise prefer the configured environment
+# before discovering an existing store; never create or migrate credential data.
+if (-not $CredentialPath -and [Environment]::GetEnvironmentVariable($routingPreflight.preflight.api_key_env, 'Process')) {
+    $routingResult = Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $null -PermitEnvironmentKey
+    Write-RoutingChildResult $routingResult
+    return
+}
+. (Join-Path $SkillRoot 'scripts\Resolve-RoutingCredential.ps1')
+$routingStore = Resolve-RoutingCredential -ExplicitPath $CredentialPath `
+    -PortablePath (Join-Path $routingCodexRoot 'routing\openai-key.dpapi') `
+    -LegacyPath (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'CodexModelRouting\openai-key.dpapi')
+if (-not $routingStore.Path -or -not (Test-Path -LiteralPath $routingStore.Path -PathType Leaf)) {
+    if ($CredentialPath) {
+        # An explicit missing store is a failed selection, not permission to use
+        # some other ambient account's credential.
+        $routingArguments += @('--credential-error', 'local_credential_error')
+    }
     $routingResult = Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $null -PermitEnvironmentKey
     Write-RoutingChildResult $routingResult
     return
@@ -168,20 +189,17 @@ try {
         if (-not (Get-Module -Name Microsoft.PowerShell.Security)) {
             Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
         }
-        $routingSecureKey = ConvertTo-SecureString -String ((Get-Content -LiteralPath $CredentialPath -Raw).Trim())
+        $routingSecureKey = ConvertTo-SecureString -String ((Get-Content -LiteralPath $routingStore.Path -Raw).Trim())
     } catch {
         $routingCredentialFailed = $true
     }
     if ($routingCredentialFailed) {
         # Revalidate current admission with rules, without attempting Decisions.
         # A required route that disappeared must still fail with exit 2.
-        $routingResult = Invoke-RoutingPython -RoutingArguments ($routingArguments + @('--provider', 'rules')) -RoutingKey $null -PermitEnvironmentKey
-        if ($routingResult.ExitCode -ne 0) { Write-RoutingChildResult $routingResult; return }
-        $routingFallback = $routingResult.Output | ConvertFrom-Json
-        $routingFallback.provenance.fallback_reason = 'local_credential_error'
-        $routingFallback | ConvertTo-Json -Depth 12 -Compress
+        $routingResult = Invoke-RoutingPython -RoutingArguments ($routingArguments + @('--credential-error', 'local_credential_error')) -RoutingKey $null -PermitEnvironmentKey
+        Write-RoutingChildResult $routingResult
     } else {
-        $routingResult = Invoke-RoutingPython -RoutingArguments $routingArguments -RoutingKey $routingSecureKey -KeyEnvironment $routingPreflight.preflight.api_key_env -PermitEnvironmentKey
+        $routingResult = Invoke-RoutingPython -RoutingArguments ($routingArguments + @('--credential-source', $routingStore.Source)) -RoutingKey $routingSecureKey -KeyEnvironment $routingPreflight.preflight.api_key_env -PermitEnvironmentKey
         Write-RoutingChildResult $routingResult
     }
 } finally {

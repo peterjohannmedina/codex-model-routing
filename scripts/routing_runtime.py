@@ -246,10 +246,29 @@ def evaluator_block_reason(config):
             and core.DECISION_MODEL not in config.native.allowed_models else None)
 
 
+def evaluator_provenance(result, status, reason=None, attempts=0, credential_source='none'):
+    """Fixed status/reason metadata only; never persist key values or store paths."""
+    values = {'evaluator_status': status, 'evaluator_attempted': attempts > 0,
+              'evaluator_succeeded': status == 'succeeded',
+              'evaluator_fallback': status in ('blocked', 'fallback'),
+              'evaluator_reason': reason, 'credential_source': credential_source}
+    result['provenance'].update(values)
+    result.setdefault('observations', {}).update(values,
+        requested_provider=result['provenance']['requested_provider'],
+        used_provider=result['provenance']['used_provider'])
+    return result
+
+
 def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
-          decision_transport=core.post_decisions, local_transport=local_http, allow_api=False,
-          preflight_only=False, offline=False, native_catalog=None):
+          decision_transport=None, local_transport=local_http, allow_api=False,
+          preflight_only=False, offline=False, native_catalog=None,
+          credential_source='environment', credential_error=None):
     environment = os.environ if environment is None else environment
+    decision_transport = core.post_decisions if decision_transport is None else decision_transport
+    if credential_source not in ('environment','windows_dpapi','legacy_windows_dpapi','explicit_windows_dpapi'):
+        raise core.RoutingError('invalid_credential_source')
+    if credential_error not in (None,'local_credential_error'):
+        raise core.RoutingError('invalid_credential_error')
     request, local_status = prepare(packet, config, overrides, environment, local_transport, offline, native_catalog)
     baseline = core.recommend(request, core.RulesProvider())
     requires_api = config.decisions.enabled and len(request.candidates) > 1
@@ -265,12 +284,19 @@ def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
             reason = 'verified_decisions_cost_bound_unavailable'
         elif not allow_api:
             reason = 'api_not_authorized'
+        elif credential_error:
+            reason = credential_error
     may_load = requires_api and reason is None and allow_api
     baseline['provenance'].update(requested_provider='decisions' if config.decisions.enabled else 'rules',
                                   fallback_reason=reason, local_status=local_status)
     if config.decisions.enabled and len(request.candidates) == 1:
         baseline['provenance']['resolution'] = 'single_admissible_route'
     baseline['observations'] = {'evaluator_attempts': 0, 'evaluator_usage': {'input_tokens': 0, 'output_tokens': 0}}
+    status = ('disabled' if not config.decisions.enabled else
+              'single_candidate' if len(request.candidates) == 1 else
+              'blocked' if reason else 'preflight')
+    evaluator_provenance(baseline, status, reason or
+        ('provider_disabled' if status=='disabled' else 'single_admissible_route' if status=='single_candidate' else 'preflight_only'))
     if preflight_only:
         return {'preflight': {'admissible_candidates': len(request.candidates), 'may_load_credential': may_load,
                              'requires_api': requires_api, 'block_reason': reason,
@@ -280,14 +306,16 @@ def route(packet, config=Config(), overrides=core.Overrides(), environment=None,
                              'decisions_api_calls': 0}, 'safe_result': baseline}
     if may_load:
         observed, observations = transport_observer(decision_transport)
-        provider = core.DecisionsProvider(api_key=environment.get(config.decisions.api_key_env, ''), allow_api=True,
+        key = environment.get(config.decisions.api_key_env, '')
+        provider = core.DecisionsProvider(api_key=key, allow_api=True,
             timeout_seconds=config.decisions.timeout_seconds, minimum_confidence=config.decisions.minimum_confidence,
             transport=observed)
         result = core.recommend(request, provider)
         result['provenance']['local_status'] = local_status
         result['observations'] = {'evaluator_attempts': observations['attempts'],
             'evaluator_usage': observations['usage'] if observations['attempts'] else {'input_tokens': 0, 'output_tokens': 0}}
-        return result
+        return evaluator_provenance(result, 'succeeded' if result['provenance']['used_provider']=='decisions' else 'fallback',
+            result['provenance']['fallback_reason'], observations['attempts'], credential_source if key else 'none')
     return baseline
 
 
@@ -360,6 +388,11 @@ def main(argv=None):
     parser.add_argument('--overrides', type=Path)
     parser.add_argument('--provider', choices=('rules', 'decisions'))
     parser.add_argument('--allow-api', action='store_true')
+    parser.add_argument('--timeout-seconds', type=float, help='override evaluator timeout only')
+    parser.add_argument('--minimum-confidence', type=float, help='override evaluator confidence only')
+    parser.add_argument('--credential-source', choices=('environment','windows_dpapi','legacy_windows_dpapi','explicit_windows_dpapi'),
+                        default='environment', help='delivery origin reported by the secure Windows launcher; never a key/path')
+    parser.add_argument('--credential-error', choices=('local_credential_error',), help=argparse.SUPPRESS)
     parser.add_argument('--offline', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
     parser.add_argument('--max-decision-input-tokens', type=int)
@@ -404,6 +437,10 @@ def main(argv=None):
         raw = copy.deepcopy(raw)
         if args.provider:
             raw.setdefault('decisions', {})['enabled'] = args.provider == 'decisions'
+        if args.timeout_seconds is not None:
+            raw.setdefault('decisions', {})['timeout_seconds'] = args.timeout_seconds
+        if args.minimum_confidence is not None:
+            raw.setdefault('decisions', {})['minimum_confidence'] = args.minimum_confidence
         if args.max_decision_input_tokens is not None:
             raw.setdefault('decisions', {})['max_input_tokens'] = args.max_decision_input_tokens
         if args.max_decision_cost_usd is not None:
@@ -426,14 +463,16 @@ def main(argv=None):
         # present. Match the PowerShell launcher: never infer during preflight.
         if args.preflight_only:
             result = route(packet, config, overrides, allow_api=args.allow_api,
-                           preflight_only=True, offline=args.offline, native_catalog=native_catalog)
+                           preflight_only=True, offline=args.offline, native_catalog=native_catalog,
+                           credential_source=args.credential_source, credential_error=args.credential_error)
         elif args.execute_local:
             if args.offline:
                 raise core.RoutingError('local_execution_in_offline_mode')
             result = execute_local(packet, config, overrides, allow_local_inference=args.allow_local_inference, native_catalog=native_catalog)
         else:
             result = route(packet, config, overrides, allow_api=args.allow_api,
-                           preflight_only=args.preflight_only, offline=args.offline, native_catalog=native_catalog)
+                           preflight_only=args.preflight_only, offline=args.offline, native_catalog=native_catalog,
+                           credential_source=args.credential_source, credential_error=args.credential_error)
         return publish(result)
     except core.RoutingError as error:
         return publish({'error': 'invalid_or_unsatisfied_routing_configuration', 'reason': str(error), 'execution_started': False})

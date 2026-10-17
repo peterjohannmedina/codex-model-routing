@@ -81,11 +81,12 @@ def sanitize(raw):
     if type(result['stage']) is not int or result['stage'] not in (0, 1, 2): raise ValueError('invalid_stage')
     for key in ('model', 'effort', 'adapter', 'override_model', 'override_effort', 'fallback_reason',
                 'local_status', 'execution_status', 'model_source', 'mode', 'error', 'stream_status',
-                'execution_adapter', 'execution_model', 'execution_effort'):
+                'execution_adapter', 'execution_model', 'execution_effort', 'requested_provider', 'used_provider',
+                'evaluator_status', 'evaluator_reason', 'credential_source'):
         result[key] = label(raw.get(key))
     for key in ('evaluator_attempts', 'downstream_attempts', 'command_items', 'elapsed_ms'):
         result[key] = count(raw.get(key))
-    for key in ('local_enabled', 'decisions_enabled'):
+    for key in ('local_enabled', 'decisions_enabled', 'evaluator_attempted', 'evaluator_succeeded', 'evaluator_fallback'):
         result[key] = raw.get(key) if type(raw.get(key)) is bool else None
     if source == 'codex_otel':
         validation = raw.get('contract_validation')

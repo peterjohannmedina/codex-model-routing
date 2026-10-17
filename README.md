@@ -272,3 +272,9 @@ feasibility. This does not install automatic model dispatch.
 The **Optimize Codex** overview separates observed native sessions/responses
 from router-command and opt-in JSON-collector counts. Responses are not counted
 as completed tasks. Its SVG mark identifies this independent Codex routing tool.
+
+Enabled Decisions settings now reach both Python commands and the canonical
+Windows launcher. The launcher reuses an existing legacy encrypted store after
+consent and admission, without moving credentials. Recorded status/reason metadata
+distinguishes blocked, attempted and successful evaluation. See
+[Decisions invocation and tiny validation](references/decisions-invocation.md).

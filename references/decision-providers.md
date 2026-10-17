@@ -7,9 +7,11 @@ or `python3 scripts/routing_runtime.py PACKET`. These ship in the package and
 share external configuration, optional provider admission and evaluator cap
 checks. Read [local-workers.md](local-workers.md) for the four-provider matrix,
 generic local execution, require-local behavior and secure loader options.
-The lower-level `routing_decision.py` interface below remains compatible for
-embedders with prevalidated readiness; it does not discover local services or
-load encrypted credentials itself.
+The `routing_decision.py` command uses the same configured runtime; its Python
+provider classes remain available to embedders with prevalidated readiness.
+Use the Windows launcher for encrypted credentials. See
+[invocation and evidence](decisions-invocation.md) for wiring, legacy store
+compatibility, status evidence and separately approved tiny validation.
 
 ## Architecture and scope
 
@@ -44,12 +46,13 @@ interface does not claim drop-in compatibility with an unspecified dispatcher.
 
 Requires Python 3.11+ with no third-party packages. The skill and existing
 PowerShell adapters still work without Python, using inline routing rules.
-All configuration is per invocation; there is no global install or hidden
-environment switch that enables metered requests.
+Saved external settings are honored when `--provider` is omitted; explicit
+flags override their named settings. No hidden environment switch authorizes
+metered requests.
 
 ```sh
 # Offline: preserve the parent's safe route.
-python scripts/routing_decision.py assets/routing-packet.example.json
+python scripts/routing_decision.py assets/routing-packet.example.json --provider rules
 
 # Select Decisions but decline spending: explicit rules fallback, no request.
 python scripts/routing_decision.py assets/routing-packet.example.json --provider decisions
@@ -62,11 +65,12 @@ python scripts/routing_decision.py packet.json --provider decisions --allow-api 
 python scripts/routing_decision.py packet.json --overrides user-overrides.json
 ```
 
-`--minimum-confidence` defaults to 0.6, accepts 0–1. This is a conservative
+`--minimum-confidence` uses saved settings (0.6 when unconfigured), accepts 0–1. This is a conservative
 application threshold, not a measured quality guarantee. Calibrate it on labeled
 workloads before relying on automated routing at scale. API consent, key presence,
-and route eligibility are independent requirements. The key is read only from
-`OPENAI_API_KEY`; Codex ChatGPT sign-in credentials are never inspected or reused.
+and route eligibility are independent requirements. Python reads the configured
+key variable (default `OPENAI_API_KEY`); the Windows launcher can also deliver an existing encrypted key after the same gates.
+Codex ChatGPT sign-in credentials are never inspected or reused.
 The endpoint is fixed to `https://api.openai.com/v1/decisions`; redirects are
 rejected. No custom proxy/gateway base URL is accepted by this provider.
 
@@ -164,7 +168,9 @@ request byte count, and SHA-256 digest. Provenance never includes API keys, the
 task summary, response bodies, free-form model explanations or exception messages.
 The recommendation echoes trusted candidate fields, including its description;
 sanitize those fields as carefully as the task summary.
-Nothing is logged or persisted automatically. Exit 0 means a valid recommendation
+The CLI records allowlisted metadata when local recording is enabled; use
+`--no-ledger` to disable it. Provider primitives do not persist observations.
+Exit 0 means a valid recommendation
 (including an explicit rules fallback); exit 2 means invalid trusted inputs.
 
 ## Latency, network fallback and cost

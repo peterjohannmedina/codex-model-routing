@@ -80,6 +80,9 @@ for relative_path in \
     assets/dashboard/style.css \
     assets/dashboard/router-mark.svg \
     scripts/Invoke-Routing.ps1 \
+    scripts/Resolve-RoutingCredential.ps1 \
+    scripts/Test-DecisionsWiring.ps1 \
+    assets/decisions-validation.packet.json \
     scripts/Set-RoutingApiKey.ps1 \
     scripts/invoke-routing.sh \
     assets/routing-config.example.json \
