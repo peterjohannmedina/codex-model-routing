@@ -2,6 +2,13 @@
 const byId = id => document.getElementById(id);
 let csrf = '', formVersion = '', dirty = false, polling = false, loaded = false;
 let editRevision = 0, formEpoch = 0, saving = false;
+let authorizationRequired = false;
+function requireAuthorization() {
+  authorizationRequired = true; loaded = false;
+  text('connection','Browser authorization required');
+  text('message','Reopen Routing desk using its installed shortcut or bootstrap open command. This obtains a fresh one-use browser authorization; no server restart is needed. This tab has stopped polling and its displayed values may be stale.');
+  byId('message').className='error';byId('save').disabled=true;byId('reload').disabled=true;
+}
 const fields = {
   decisions: {'enabled':'decisions-enabled','api_key_env':'decisions-key-env','timeout_seconds':'decisions-timeout','minimum_confidence':'decisions-confidence','max_input_tokens':'decision-token-cap','max_cost_usd':'decision-cost-cap'},
   local: {'enabled':'local-enabled','base_url':'local-url','model':'local-model','api_key_env':'local-key-env','efforts':'local-efforts','timeout_seconds':'local-timeout','max_output_tokens':'local-output','allow_remote':'local-remote','prefer_when_eligible':'local-prefer'},
@@ -69,6 +76,7 @@ async function api(path, body, bootstrap) {
     const response = await fetch(path, options);
     const value = await response.json();
     if (!response.ok) {
+      if(path!=='/api/auth'&&response.status===403)requireAuthorization();
       const error=new Error(value.error || 'local_request_failed');error.code=value.error;error.field=value.field;throw error;
     }
     return value;
@@ -101,12 +109,24 @@ function addDetail(list, label, value) {
   const dt=document.createElement('dt'), dd=document.createElement('dd'); dt.textContent=label; dd.textContent=value ?? 'Unknown'; list.append(dt,dd);
 }
 function renderEvents(events) {
-  const holder = byId('events'); holder.replaceChildren();
+  const holder = byId('events'), current = Array.from(holder.children);
+  const existing = new Map(current.filter(row=>row.routingObservationKey).map(row=>[row.routingObservationKey,row]));
+  const focused = current.find(row=>row.routingObservationKey && document.activeElement===row.children[0])?.routingObservationKey;
   if (!events.length) {
-    const empty=document.createElement('div'); empty.className='empty'; empty.textContent='No instrumented activity in this scope. Connect an explicit router command or Codex exec JSON stream; other sessions remain unobserved.'; holder.append(empty); return;
+    const empty=document.createElement('div'); empty.className='empty'; empty.textContent='No instrumented activity in this scope. Connect an explicit router command or Codex exec JSON stream; other sessions remain unobserved.'; holder.replaceChildren(empty); return;
   }
+  const next=[], seen=new Set();
   for (const event of events.slice(0,100)) {
+    // IDs are stable across polling, enrichment and reordering. Include session
+    // and source so two scopes never borrow each other's expansion state.
+    let key=[event.source,event.session_id,event.request_id].every(value=>typeof value==='string')?
+      JSON.stringify([event.source,event.session_id,event.request_id]):null;
+    if(seen.has(key))key=null;
+    if(key)seen.add(key);
+    const previous=key?existing.get(key):null, data=JSON.stringify(event);
+    if(previous?.routingObservationData===data){next.push(previous);continue;}
     const row=document.createElement('details'), summary=document.createElement('summary');
+    row.routingObservationKey=key;row.routingObservationData=data;row.open=previous?.open || false;
     const source=event.source==='codex_otel'?'Codex OTel':event.source==='router'?'Router':'Codex exec';
     const status=event.mode==='otel_session'?'Session settings observed':event.mode==='otel_response'?'Model response observed':event.execution_status==='completed'?'Executed · complete':event.execution_status==='started'?'In progress':event.execution_status==='failed'||event.error?'Failed / stopped':'Recommendation';
     const values=[time(event.observed_at), (event.model || 'Model unobserved') + (event.effort ? ' · '+event.effort : ''), source, status];
@@ -115,6 +135,10 @@ function renderEvents(events) {
     addDetail(list,'Session',event.session_id); addDetail(list,event.source==='codex_otel'?'Observation (derived ID)':'Request',event.request_id);
     addDetail(list,'Session evidence',event.session_source || (event.session_id==='unassigned'?'Unassigned':'Caller-assigned UUID'));
     addDetail(list,'Source / mode',event.source+' / '+(event.mode || 'unknown'));
+    if(event.source==='codex_otel'){
+      addDetail(list,'Producer version',event.producer_version);
+      addDetail(list,'Contract evidence',event.contract_validation==='reviewed_version'?'Source-reviewed version':event.contract_validation==='reviewed_series_schema'?'Reviewed series schema match; exact build semantics unverified':'Not recorded');
+    }
     addDetail(list,'Model evidence',event.model_source); addDetail(list,'Execution',event.execution_status);
     addDetail(list,'Execution request model / effort',(event.execution_model || 'Unobserved')+' / '+(event.execution_effort || 'Unobserved'));
     addDetail(list,'Collector stream',event.stream_status || 'Not a collected stream');
@@ -127,7 +151,13 @@ function renderEvents(events) {
     addDetail(list,'Downstream input / output',number(event.downstream_usage?.input_tokens)+' / '+number(event.downstream_usage?.output_tokens));
     addDetail(list,'Command items',number(event.command_items));
     addDetail(list,'Observed / source timestamp',event.observed_at+' / '+(event.source_timestamp || 'Source timestamp unavailable'));
-    row.append(summary,list); holder.append(row);
+    row.append(summary,list); next.push(row);
+  }
+  // Leave unchanged nodes attached: expansion, text selection and keyboard focus
+  // survive ordinary polls. Restore summary focus when a real update moves it.
+  if(current.length!==next.length || next.some((row,index)=>row!==current[index])){
+    holder.replaceChildren(...next);
+    if(focused)next.find(row=>row.routingObservationKey===focused)?.children[0].focus({preventScroll:true});
   }
 }
 function renderChart(days) {
@@ -146,8 +176,37 @@ function render(data, formFresh = true) {
   const totals=data.totals;
   text('coverage-status',(data.config.observability.enabled?'Local recording enabled. ':'Local recording disabled. ')+(data.sessions.length?'Retained session labels: '+data.sessions.length+'. Historical records do not prove an active feed.':'No recorded sessions yet. Connect an instrumented command, exec JSON stream or approved new Codex CLI OTel export.')+' Dashboard connection does not connect sessions.');
   const otel=totals.otel || {sessions:0,responses:0}, receiver=data.otel_receiver;
-  text('otel-receiver',receiver?.enabled?'Receiver enabled · exporter configuration unverified':'Receiver disabled');
-  text('otel-summary',otel.sessions+' sessions with retained OTel metadata; '+otel.responses+' model-response observations. '+(otel.responses?'Known input / output tokens: '+number(otel.input_tokens.known)+' / '+number(otel.output_tokens.known)+'; unknown input / output: '+otel.input_tokens.unknown_responses+' / '+otel.output_tokens.unknown_responses+'. ':'No response usage observed. ')+(receiver?.last_received_at?'Last accepted batch: '+time(receiver.last_received_at)+'.':'No accepted batch in this receiver process.'));
+  text('otel-receiver',receiver?.enabled?'Receiver listening · '+(receiver.accepted_records?'metadata received':'no metadata received'):'Receiver disabled');
+  text('otel-summary',otel.sessions+' sessions with retained OTel metadata; '+otel.responses+' model-response observations. '+(otel.responses?'Known input / output tokens: '+number(otel.input_tokens.known)+' / '+number(otel.output_tokens.known)+'; unknown input / output: '+otel.input_tokens.unknown_responses+' / '+otel.output_tokens.unknown_responses+'. ':'No response usage observed. ')+(receiver?.last_received_at?'Last validated batch: '+time(receiver.last_received_at)+'.':'No validated batch in this receiver process.'));
+  let diagnostic=!receiver?.enabled?'Start the approved receiver to receive CLI exports.':
+    !receiver.runtime_version?'This receiver predates compatibility diagnostics. Update and restart the dashboard receiver through its supported lifecycle before testing new CLI exports; this does not restart Codex.':
+    receiver.unsupported_version_records?'Some records use an unsupported CLI version; check compatibility before upgrading the receiver.':
+    receiver.missing_version_records?'Session or response records arrived without the required event app.version; the resource version alone does not establish that session contract.':
+    receiver.invalid_version_records?'Session or response records have an invalid event app.version field; check the producer schema.':
+    receiver.unauthorized_requests?'Some exporter requests failed authorization or Host/origin checks; review the approved endpoint and capability setup.':
+    receiver.invalid_batches?'Some exporter requests failed JSON/schema/size checks; use uncompressed OTLP/HTTP JSON.':
+    receiver.storage_errors?'Some observations could not be stored; check local state access.':
+    receiver.recording_disabled_batches?'Export batches arrived while local recording was disabled; those observations were not stored.':
+    receiver.last_received_at&&!receiver.accepted_records?'Export batches arrived, but no supported session or response metadata was accepted.':
+    !receiver.last_received_at?'No export batch has reached this receiver. Confirm the producer uses the same Codex home and approved exporter; an already-running producer may retain startup settings.':
+    'Metadata has reached this receiver; retained history does not prove that every open session is connected.';
+  const count=value=>number(Number.isSafeInteger(value)&&value>=0?value:0);
+  if(receiver?.runtime_version)diagnostic+=' Requests / unauthorized / invalid: '+count(receiver?.requests)+' / '+count(receiver?.unauthorized_requests)+' / '+count(receiver?.invalid_batches)+
+    '. Accepted / ignored / rejected records: '+count(receiver?.accepted_records)+' / '+count(receiver?.ignored_records)+' / '+count(receiver?.rejected_records)+'.';
+  if(receiver?.state_id)diagnostic+=' Local state ID: '+receiver.state_id+'.';
+  if(receiver?.runtime_version)diagnostic+=' Runtime: '+receiver.runtime_version+'.';
+  if(receiver?.producer_metadata){
+    const events=receiver.producer_metadata.events||{};
+    diagnostic+=' Producer event classes: session starts '+count(events.session_start)+', response events '+count(events.response_event)+', API requests '+count(events.api_request)+', process events '+count(events.process)+', other '+count(events.other)+', missing event name '+count(events.missing)+'.';
+    if(!events.session_start&&!events.response_event&&receiver.last_received_at)diagnostic+=' No session-start or response event has reached this receiver; API/process traffic does not contain response usage.';
+    if(events.schema_compatible)diagnostic+=' '+count(events.schema_compatible)+' observations match the reviewed series schema; their exact build semantics remain unverified.';
+    const features=receiver.producer_metadata.features||{};
+    if(features.unknown_record_fields)diagnostic+=' '+count(features.unknown_record_fields)+' records contain unrecognized top-level fields; names and values were discarded.';
+    if(features.top_level_event_name_only)diagnostic+=' '+count(features.top_level_event_name_only)+' records have only a top-level event name, without the reviewed event.name attribute.';
+  }
+  if(receiver?.running_revision)diagnostic+=' Running revision: '+receiver.running_revision+'.';
+  if(receiver?.restart_required===true)diagnostic+=' Installed files differ from this running receiver; reopen through the installed launcher to apply the update.';
+  text('otel-diagnostics',diagnostic);
   text('requests',number(totals.requests)); text('executions',number(totals.completed_executions));
   for(const name of ['evaluator','downstream']) {
     const input=totals[name].input_tokens;
@@ -156,7 +215,7 @@ function render(data, formFresh = true) {
   text('evaluator-cost',money(totals.evaluator_base_cost_estimate_usd));text('local-cost',money(totals.local_cost_estimate_usd));
   text('scope-note',data.selected_session ? 'Selected session · retained history' : data.sessions.length+' recorded sessions · retained history');
   const select=byId('session'), current=select.value;
-  const all=document.createElement('option');all.value='';all.textContent='All instrumented sessions';select.replaceChildren(all);
+  const all=document.createElement('option');all.value='';all.textContent='All recorded sessions';select.replaceChildren(all);
   for(const session of data.sessions){const option=document.createElement('option');option.value=session;option.textContent=session==='unassigned'?'Unassigned router commands':session;select.append(option);}
   select.value=current;
   for(const name of ['decisions','local']){
@@ -170,10 +229,10 @@ function render(data, formFresh = true) {
   text('updated','Refreshed '+time(data.observed_at)+' · local observation time');text('connection','Dashboard connected · 2s');
 }
 async function refresh(){
-  if(polling)return;polling=true;
+  if(polling||authorizationRequired)return;polling=true;
   const pollEpoch=formEpoch;
-  try{const data=await api('/api/state'+(byId('session').value?'?session='+encodeURIComponent(byId('session').value):''));render(data,pollEpoch===formEpoch);text('message','');}
-  catch(error){text('connection','Disconnected');text('message','Local data unavailable: '+error.message+'. The last displayed values may be stale.');byId('message').className='error';}
+  try{const data=await api('/api/state'+(byId('session').value?'?session='+encodeURIComponent(byId('session').value):''));if(authorizationRequired)return;render(data,pollEpoch===formEpoch);text('message','');}
+  catch(error){if(!authorizationRequired){text('connection','Disconnected');text('message','Local data unavailable: '+error.message+'. The last displayed values may be stale.');byId('message').className='error';}}
   finally{polling=false;}
 }
 byId('config-form').addEventListener('input',()=>{editRevision++;dirty=true;text('save-status','Unsaved changes. Live observations continue.');});
@@ -194,7 +253,7 @@ byId('config-form').addEventListener('submit',async event=>{
     text('save-status',dirty?'Saved earlier snapshot; newer edits remain unsaved.':'Settings saved locally. No key was stored or checked. No provider request was made.');
   }
   catch(error){text('save-status',saveError(error));}
-  finally{saving=false;byId('save').disabled=false;byId('reload').disabled=false;}
+  finally{saving=false;byId('save').disabled=!loaded;byId('reload').disabled=authorizationRequired;}
 });
 byId('reload').addEventListener('click',()=>{if(saving)return;formEpoch++;dirty=false;refresh();});
 byId('session').addEventListener('change',refresh);
@@ -208,5 +267,5 @@ byId('clear').addEventListener('click',async()=>{if(!confirm('Delete retained lo
     finally{history.replaceState(null,'',location.pathname);}
   }
   csrf=(await api('/api/session')).csrf;await refresh();
-}catch(error){text('message','Open the private one-use launch file from the server terminal to authorize this browser. Restart the server if the file expired.');}
-setInterval(()=>{if(!document.hidden)refresh();},2000);})();
+}catch(error){if(error.code==='local_browser_authorization_required'||authorizationRequired)requireAuthorization();else{text('connection','Disconnected');text('message','Local connection unavailable. Reopen Routing desk using its installed shortcut or bootstrap open command.');}}
+setInterval(()=>{if(!document.hidden&&!authorizationRequired)refresh();},2000);})();

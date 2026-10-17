@@ -5,6 +5,7 @@ import hashlib
 import hmac
 from http.cookies import SimpleCookie, CookieError
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 import json
 import os
 import re
@@ -22,6 +23,13 @@ import routing_state as state
 import routing_otel as otel
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/dashboard'
+
+
+def package_version():
+    try:
+        value = (ASSETS.parents[1] / 'VERSION').read_text(encoding='ascii').strip()
+        return value if re.fullmatch(r'[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{1,3}', value) else 'unverified'
+    except (OSError, UnicodeError): return 'unverified'
 
 CONFIG_HINTS = {
     'invalid_key_environment_name': 'Enter an environment-variable name such as OPENAI_API_KEY, not an API key value.',
@@ -103,8 +111,44 @@ class Store:
             raise ValueError('state_must_be_outside_repository')
         self.path = self.root / 'config.json'
         self.lock = threading.Lock()
-        self.otel_status = {'enabled': False, 'last_received_at': None, 'accepted_records': 0,
-                            'ignored_records': 0, 'rejected_records': 0, 'exporter_configuration': 'unverified'}
+        self.otel_status = {'enabled': False, 'last_received_at': None, 'last_observation_at': None,
+            'accepted_records': 0, 'ignored_records': 0, 'rejected_records': 0,
+            'requests': 0, 'unauthorized_requests': 0, 'invalid_batches': 0, 'storage_errors': 0,
+            'validated_batches': 0, 'recording_disabled_batches': 0,
+            **{reason + '_records': 0 for reason in otel.IGNORE_REASONS},
+            'supported_cli_versions': list(otel.SUPPORTED_VERSIONS), 'exporter_configuration': 'unverified',
+            'schema_compatible_series': list(otel.SCHEMA_SERIES),
+            'runtime_version': package_version(),
+            'running_revision': None, 'producer_metadata': {'versions': {}, 'events': {}, 'features': {}},
+            'started_at': state.dt.datetime.now(state.dt.timezone.utc).isoformat(),
+            'state_id': hashlib.sha256(str(self.root).encode()).hexdigest()[:12]}
+
+    def runtime_identity(self):
+        """Compare the actual server's loaded revision with the install receipt."""
+        installed = None
+        try:
+            value = json.loads((self.root/'dashboard-service'/'installation.json').read_text(encoding='utf-8'))
+            revision = value.get('revision')
+            if isinstance(revision, str) and re.fullmatch(r'[0-9.]+\+[0-9a-f]{16}', revision): installed = revision
+        except (OSError, ValueError, TypeError, AttributeError): pass
+        running = self.otel_status.get('running_revision')
+        return {'pid': os.getpid(), 'installed_revision': installed,
+                'restart_required': installed != running if installed is not None and running is not None else None}
+
+    def write_receiver_status(self):
+        """Fixed metadata/counters only; never raw export data, IDs or capabilities."""
+        path = self.root / 'receiver-status.json'
+        try:
+            if path.is_symlink() or (path.exists() and getattr(path.lstat(), 'st_file_attributes', 0) & 0x400): return
+            self.root.mkdir(parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(prefix='.receiver-status-', dir=self.root)
+            try:
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+                    json.dump({'schema_version': 1, 'kind': 'routing_receiver', **self.otel_status,
+                               **self.runtime_identity()}, stream)
+                os.replace(name, path)
+            finally: Path(name).unlink(missing_ok=True)
+        except OSError: pass  # Diagnostics never turn accepted ingestion into failure.
 
     def config(self):
         config = safe_config(core.load_file(self.path)) if self.path.is_file() else safe_config({'schema_version': 1})
@@ -151,10 +195,20 @@ class Store:
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
-    def __init__(self, port, store, otel_capability=None):
+    def server_bind(self):
+        # HTTPServer's getfqdn() can stall on host DNS. This listener is always
+        # numeric loopback and needs no hostname resolution or network lookup.
+        TCPServer.server_bind(self)
+        self.server_name = 'localhost'
+        self.server_port = self.server_address[1]
+
+    def __init__(self, port, store, otel_capability=None, control_capability=None, instance_id=None, revision=None):
         self.store = store
         self.otel_capability = otel.capability(otel_capability) if otel_capability is not None else None
         self.otel_lock = threading.Lock()
+        self.control_capability = otel.capability(control_capability) if control_capability is not None else None
+        self.instance_id, self.revision = instance_id, revision
+        self.store.otel_status['running_revision'] = revision
         self.store.otel_status['enabled'] = self.otel_capability is not None
         self.session = secrets.token_urlsafe(32)
         self.csrf = secrets.token_urlsafe(32)
@@ -167,6 +221,35 @@ class Server(ThreadingHTTPServer):
         super().__init__(('127.0.0.1', port), Handler)
         self.origin = 'http://127.0.0.1:' + str(self.server_port)
         self.cookie_name = 'routing_' + str(self.server_port)
+        self.last_status_write = 0
+        self.record_otel()
+
+    def record_producer(self, producer):
+        with self.otel_lock:
+            target = self.store.otel_status['producer_metadata']
+            for kind in ('versions', 'events', 'features'):
+                for label, amount in producer.get(kind, {}).items():
+                    counts = target[kind]
+                    if label not in counts and len(counts) >= otel.VERSION_TALLY_LIMIT: label = 'other'
+                    counts[label] = counts.get(label, 0) + amount
+
+    def record_otel(self, received=False, observed=False, **increments):
+        with self.otel_lock:
+            status = self.store.otel_status
+            first_failure = any(name in ('unauthorized_requests', 'invalid_batches', 'storage_errors') and
+                status[name] == 0 and amount > 0 for name, amount in increments.items())
+            for name, amount in increments.items():
+                if name not in status or type(status[name]) is not int or type(amount) is not int:
+                    raise ValueError('invalid_receiver_counter')
+                status[name] += amount
+            if received: status['last_received_at'] = state.dt.datetime.now(state.dt.timezone.utc).isoformat()
+            if observed: status['last_observation_at'] = status['last_received_at']
+            # Bound writes for unauthenticated or invalid request bursts. The
+            # authenticated UI always reads current in-memory counters.
+            now = time.monotonic()
+            if received or first_failure or now - self.last_status_write >= 1:
+                self.store.write_receiver_status()
+                self.last_status_write = now
 
     def create_launch_file(self):
         self.store.root.mkdir(parents=True, exist_ok=True)
@@ -189,6 +272,14 @@ class Server(ThreadingHTTPServer):
                 try: self.launch_path.unlink(missing_ok=True)
                 except OSError: pass
             return True
+
+    def renew_launch_file(self):
+        with self.bootstrap_lock:
+            if self.launch_path: self.launch_path.unlink(missing_ok=True)
+            self.bootstrap = secrets.token_urlsafe(32)
+            self.bootstrap_until = time.monotonic() + 300
+            self.bootstrap_used = False
+            return self.create_launch_file()
 
     def server_close(self):
         if self.launch_path:
@@ -273,7 +364,10 @@ class Handler(BaseHTTPRequestHandler):
                 if set(query) - {'session'} or any(len(v) != 1 for v in query.values()): raise ValueError()
                 session = state.identifier(query['session'][0]) if 'session' in query else None
                 snapshot = self.server.store.snapshot(session)
-                with self.server.otel_lock: snapshot['otel_receiver'] = dict(self.server.store.otel_status)
+                with self.server.otel_lock:
+                    snapshot['otel_receiver'] = {**self.server.store.otel_status, **self.server.store.runtime_identity()}
+                    snapshot['otel_receiver']['producer_metadata'] = {
+                        kind: dict(counts) for kind, counts in self.server.store.otel_status['producer_metadata'].items()}
                 return self.reply(200, snapshot)
             return self.reply(404, {'error': 'not_found'})
         except (ValueError, TypeError, RecursionError, OSError, state.sqlite3.Error):
@@ -281,6 +375,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/v1/logs': return self.otel_logs()
+        if self.path == '/api/lifecycle': return self.lifecycle()
         bootstrap = self.path == '/api/auth'
         if bootstrap:
             if not self.allowed(session=False) or self.headers.get('Origin') != self.server.origin:
@@ -315,39 +410,89 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, state.sqlite3.Error):
             return self.reply(503, {'error': 'storage_unavailable'})
 
-    def otel_logs(self):
-        secret = self.server.otel_capability
+    def lifecycle(self):
+        secret = self.server.control_capability
         if secret is None: return self.reply(404, {'error': 'not_found'})
-        # Dedicated native exporter capability; browser cookie/CSRF never grants
-        # ingest permission. Browser Origin/Fetch headers are always rejected.
         if (self.headers.get_all('Host', []) != [urlsplit(self.server.origin).netloc]
-                or len(self.headers.get_all(otel.HEADER, [])) != 1
-                or not hmac.compare_digest(self.headers.get(otel.HEADER, '').encode('utf-8'), secret.encode('ascii'))
-                or self.headers.get('Origin') is not None or self.headers.get('Sec-Fetch-Site') is not None):
-            return self.reply(403, {'error': 'forbidden_exporter'})
+                or len(self.headers.get_all('X-Routing-Control', [])) != 1
+                or not hmac.compare_digest(self.headers.get('X-Routing-Control', '').encode('utf-8'), secret.encode('ascii'))
+                or any(name.lower().startswith('sec-fetch-') or name.lower() == 'origin' for name in self.headers)):
+            return self.reply(403, {'error': 'forbidden_controller'})
         if (self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding')
                 or self.headers.get('Transfer-Encoding')):
             return self.reply(415, {'error': 'uncompressed_json_required'})
         try:
             if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
             length = int(self.headers['Content-Length'])
-            if not 1 <= length <= otel.MAX_BYTES: return self.reply(413, {'error': 'body_too_large'})
+            if not 1 <= length <= 512: return self.reply(413, {'error': 'body_too_large'})
+            data = self.rfile.read(length)
+            if len(data) != length: raise ValueError()
+            raw = core.read_json(data.decode('utf-8'))
+            if not isinstance(raw, dict) or set(raw) != {'action'} or raw['action'] not in ('status', 'open', 'stop'):
+                raise ValueError()
+            result = {'instance_id': self.server.instance_id, 'revision': self.server.revision,
+                      'url': self.server.origin, 'otel_receiver_enabled': self.server.otel_capability is not None}
+            if raw['action'] == 'open': result['launch_file'] = str(self.server.renew_launch_file())
+            self.reply(200, result)
+            if raw['action'] == 'stop': threading.Thread(target=self.server.shutdown, daemon=True).start()
+        except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
+            return self.reply(400, {'error': 'invalid_lifecycle_request'})
+
+    def otel_logs(self):
+        secret = self.server.otel_capability
+        if secret is None:
+            self.server.record_otel(requests=1)
+            return self.reply(404, {'error': 'not_found'})
+        # Dedicated native exporter capability; browser cookie/CSRF never grants
+        # ingest permission. Browser Origin/Fetch headers are always rejected.
+        if (self.headers.get_all('Host', []) != [urlsplit(self.server.origin).netloc]
+                or len(self.headers.get_all(otel.HEADER, [])) != 1
+                or not hmac.compare_digest(self.headers.get(otel.HEADER, '').encode('utf-8'), secret.encode('ascii'))
+                or self.headers.get('Origin') is not None or self.headers.get('Sec-Fetch-Site') is not None):
+            self.server.record_otel(requests=1, unauthorized_requests=1)
+            return self.reply(403, {'error': 'forbidden_exporter'})
+        if (self.headers.get('Content-Type') != 'application/json' or self.headers.get('Content-Encoding')
+                or self.headers.get('Transfer-Encoding')):
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(415, {'error': 'uncompressed_json_required'})
+        try:
+            if len(self.headers.get_all('Content-Length', [])) != 1: raise ValueError()
+            length = int(self.headers['Content-Length'])
+        except (ValueError, TypeError):
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(400, {'error': 'invalid_otlp_logs'})
+        if not 1 <= length <= otel.MAX_BYTES:
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(413, {'error': 'body_too_large'})
+        try:
             raw = self.rfile.read(length)
             if len(raw) != length: raise ValueError()
+        except (OSError, ValueError):
+            self.server.record_otel(requests=1, invalid_batches=1)
+            return self.reply(400, {'error': 'invalid_otlp_logs'})
+        try:
             config, _ = self.server.store.config()
             settings = state.LedgerSettings.parse(config['observability'])
             if settings.enabled:
-                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings))
-                with self.server.otel_lock:
-                    status = self.server.store.otel_status
-                    status['last_received_at'] = state.dt.datetime.now(state.dt.timezone.utc).isoformat()
-                    for field in ('accepted', 'ignored', 'rejected'): status[field + '_records'] += counts[field]
-            # Empty OTLP ExportLogsServiceResponse; never echo raw records.
-            return self.reply(200, {})
+                diagnostics, producer = {}, {}
+                counts = otel.ingest(raw, state.Ledger(self.server.store.root, settings), diagnostics, producer)
+                self.server.record_producer(producer)
+                self.server.record_otel(received=True, observed=counts['accepted'] > 0, requests=1, validated_batches=1,
+                    **{field + '_records': amount for field, amount in counts.items()},
+                    **{reason + '_records': amount for reason, amount in diagnostics.items()})
+            else:
+                otel.decode(raw)
+                self.server.record_otel(received=True, requests=1, validated_batches=1, recording_disabled_batches=1)
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError):
+            self.server.record_otel(requests=1, invalid_batches=1)
             return self.reply(400, {'error': 'invalid_otlp_logs'})
         except (OSError, state.sqlite3.Error):
+            self.server.record_otel(requests=1, storage_errors=1)
             return self.reply(503, {'error': 'storage_unavailable'})
+        # A disconnected exporter must not turn successful ingestion into a
+        # second request/storage failure. Never include transport writes in the
+        # storage exception boundary. Empty OTLP response; no raw record echo.
+        return self.reply(200, {})
 
 
 def main(argv=None):

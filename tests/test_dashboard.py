@@ -35,6 +35,28 @@ class LocalState(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
+    def test_numeric_loopback_bind_never_resolves_host_dns(self):
+        server=object.__new__(dashboard.Server)
+        def bind_only(instance):instance.server_address=('127.0.0.1',49152)
+        with patch.object(dashboard.TCPServer,'server_bind',bind_only), patch('socket.getfqdn',side_effect=AssertionError('DNS forbidden')):
+            server.server_bind()
+        self.assertEqual((server.server_name,server.server_port),('localhost',49152))
+
+    def test_receiver_diagnostics_persist_only_fixed_counters_without_socket(self):
+        store=dashboard.Store(self.root)
+        server=object.__new__(dashboard.Server)
+        server.store=store;server.otel_lock=threading.Lock();server.last_status_write=0
+        server.record_otel(received=True,validated_batches=1,unsupported_version_records=2)
+        persisted=json.loads((self.root/'receiver-status.json').read_text())
+        self.assertEqual(persisted['unsupported_version_records'],2)
+        self.assertEqual(persisted['accepted_records'],0)
+        self.assertIsNone(persisted['last_observation_at'])
+        self.assertEqual(persisted['supported_cli_versions'],['0.162.1','0.163.0'])
+        self.assertEqual(store.snapshot()['sessions'],[])
+        for private in ('conversation.id','session_id','capability','headers','prompt','body',str(self.root)):
+            self.assertNotIn(private,json.dumps(persisted))
+        with self.assertRaises(ValueError):server.record_otel(unknown_counter=1)
+
     def test_dedup_late_usage_and_unknown_are_distinct_from_zero(self):
         item = event(stage=1)
         self.assertTrue(self.ledger.put(item))
@@ -51,6 +73,18 @@ class LocalState(unittest.TestCase):
         self.assertEqual(rows[0]['first_observed_at'], initial['first_observed_at'])
         self.assertEqual(state.totals(rows)['downstream']['input_tokens'], {'known': 0, 'unknown_requests': 0})
         self.assertFalse(self.ledger.put({**item, 'stage': 0, 'downstream_usage': {'input_tokens': 50}}))
+
+    def test_running_revision_compares_content_identity_not_receipt_mtime(self):
+        store=dashboard.Store(self.root)
+        installed=self.root/'dashboard-service'/'installation.json';installed.parent.mkdir()
+        revision='2026.10.16.2+0123456789abcdef'
+        store.otel_status['running_revision']=revision
+        installed.write_text(json.dumps({'revision':revision}))
+        self.assertFalse(store.runtime_identity()['restart_required'])
+        installed.write_text(json.dumps({'revision':'2026.10.16.2+fedcba9876543210'}))
+        self.assertTrue(store.runtime_identity()['restart_required'])
+        installed.unlink()
+        self.assertIsNone(store.runtime_identity()['restart_required'])
 
     def test_metadata_allowlist_excludes_sensitive_payloads(self):
         secret = 'sk-proj-' + 'A' * 30

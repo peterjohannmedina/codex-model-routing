@@ -5,11 +5,13 @@ dashboard without piping each invocation through a collector. It uses official
 OTel log export, not session files, credentials, transcript paths, private app
 databases or a passive attachment to unrelated app-server threads.
 
-It is validated against the installed **Codex CLI 0.162.1** contract. Other
+It supports the reviewed **Codex CLI 0.162.1 and 0.163.0** contracts. Other
 versions are ignored until their fields are verified. A session appears after a
 `codex.conversation_starts` batch reaches the receiver. Export is asynchronous;
 this is not an immediate process-discovery or heartbeat guarantee. Already-open
-processes keep their startup configuration and must be restarted to opt in.
+processes may keep their startup configuration. A current config file alone does
+not prove that an existing producer loaded its exporter. See the
+[0.163.0 compatibility and empty-feed diagnosis](telemetry-compatibility-2026-10-16.md).
 
 ## Review and activation
 
@@ -125,7 +127,7 @@ changes are visible only when exported; a completed model response before an
 interrupt does not prove completion of the user turn.
 
 The receiver status distinguishes locally enabled ingestion, unverified exporter
-configuration, and a last accepted batch. It cannot prove every open session is
+configuration, and a last validated batch. It cannot prove every open session is
 connected. If it is down or a batch is lost, there is no archive backfill. Dashboard
 polling is every two seconds after a batch is retained. Recording disable, shared
 retention (7 days / 500 observations by default), and clear apply to all feeds.
@@ -152,7 +154,7 @@ local boundary, not isolation from other processes running as that same user.
 
 ## Supported surfaces and evidence
 
-Normal new local **Codex CLI 0.162.1** sessions using the approved user config are
+Normal new local **Codex CLI 0.162.1 or 0.163.0** sessions using the approved user config are
 the acceptance target. Codex Desktop, IDE and ChatGPT local Work surfaces may use
 different versions/configuration; they remain unverified until their actual
 exports are validated. No general supported feed for ordinary personal cloud

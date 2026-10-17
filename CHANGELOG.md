@@ -2,6 +2,22 @@
 
 ## Unreleased - 2026-10-16
 
+- Accept the independently reviewed CLI 0.163.0 log contract alongside 0.162.1.
+  Show receiver/auth/schema/version/recording counters and distinguish listening
+  or configured exporters from accepted metadata and retained sessions. Persist
+  only bounded diagnostic metadata; never raw export records or capabilities.
+
+- Add a skill-first, standard-library bootstrap and managed background dashboard
+  lifecycle with version/content receipts, private backups, guarded adoption,
+  update/repair/rollback/uninstall and preservation of user profiles/credentials.
+- Reopen through an independent owner-private control capability and renewed
+  browser handoff. Keep control, browser and OTel authorization separate; stop
+  only authenticated managed instances and refuse unmanaged occupied ports.
+- Document copyable Codex setup and Linux/macOS/Windows quickstarts, optional
+  user launchers/login startup, telemetry consent and actual-switching limits.
+- Refuse rollback over a recreated removed package path before restoring files;
+  refresh unchanged owned launchers when their interpreter or arguments change.
+
 - Clarify credential environment-name fields and reject invalid names before a
   save request. Return static field-specific validation hints without echoing
   submitted values; reserve reload guidance for actual version conflicts.

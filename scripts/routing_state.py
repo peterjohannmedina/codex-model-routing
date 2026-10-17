@@ -88,6 +88,14 @@ def sanitize(raw):
     for key in ('local_enabled', 'decisions_enabled'):
         result[key] = raw.get(key) if type(raw.get(key)) is bool else None
     if source == 'codex_otel':
+        validation = raw.get('contract_validation')
+        if validation not in (None, 'reviewed_version', 'reviewed_series_schema'): raise ValueError('invalid_otel_contract')
+        result['contract_validation'] = validation
+        version = raw.get('producer_version')
+        if version is not None and (not isinstance(version, str) or not re.fullmatch(
+                r'[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-(?:alpha|beta|rc)\.[0-9]{1,4}(?:\.[0-9]{1,4})?)?', version)):
+            raise ValueError('invalid_otel_version')
+        result['producer_version'] = version
         modes = {'otel_session': ('session_observed', 'startup_configuration'),
                  'otel_response': ('response_observed', 'otel_response_metadata')}
         if (result['mode'] not in modes or result['session_source'] != 'codex_thread'

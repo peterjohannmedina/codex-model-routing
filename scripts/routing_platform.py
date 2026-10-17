@@ -1,0 +1,97 @@
+"""Small platform adapters; no service, registry, shell-policy or ACL changes."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import plistlib
+import shlex
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+def private(path, helper):
+    path = Path(path)
+    if os.name == 'nt':
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(helper),
+                                 '-LiteralPath', str(path)], capture_output=True, text=True, timeout=5)
+        return result.returncode == 0 and json.loads(result.stdout) == {'private': True}
+    info = path.stat()
+    return info.st_uid == os.getuid() and not stat.S_IMODE(info.st_mode) & (0o022 if path.is_dir() else 0o077)
+
+
+def detached():
+    if os.name == 'nt':
+        return {'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {'start_new_session': True}
+
+
+def desktop_exec(arguments):
+    # Desktop Entry quoting, not shell quoting. No field-code substitutions.
+    def quote(value):
+        if any(c in value for c in '\n\r\x00'): raise ValueError('invalid_launcher_argument')
+        value = value.replace('%', '%%').replace('\\', '\\\\\\\\')
+        for character in ('"', '`', '$'): value = value.replace(character, '\\\\' + character)
+        return '"' + value + '"'
+    return ' '.join(quote(str(value)) for value in arguments)
+
+
+def launcher_specs(user, codex, python, shortcuts=False, login=False, platform=sys.platform):
+    """Return only known per-user destinations and exact launch arguments."""
+    user, codex = Path(user), Path(codex)
+    script = codex / 'skills/codex-model-routing/scripts/routing_bootstrap.py'
+    arguments = [str(python), '-B', str(script)]
+    tail = ['--user-root', str(user), '--codex-home', str(codex)]
+    result = []
+    if not shortcuts and not login:return result
+    if platform == 'win32':
+        # GetFolderPath honors redirected user folders; fixtures never touch them.
+        if user.resolve() == Path.home().resolve():
+            command = "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); @{desktop=[Environment]::GetFolderPath('Desktop');programs=[Environment]::GetFolderPath('Programs');startup=[Environment]::GetFolderPath('Startup')}|ConvertTo-Json -Compress"
+            folders = json.loads(subprocess.check_output(['powershell.exe', '-NoProfile', '-Command', command], text=True, encoding='utf-8', timeout=5))
+        else: folders = {'desktop': str(user/'Desktop'), 'programs': str(user/'StartMenu'), 'startup': str(user/'Startup')}
+        for folder, action in ([('desktop', 'open'), ('programs', 'open')] if shortcuts else []) + ([('startup', 'start')] if login else []):
+            result.append((Path(folders[folder])/'Codex Routing Dashboard.lnk', 'windows', arguments + [action] + tail))
+    elif platform == 'darwin':
+        if shortcuts:
+            result.append((user/'Desktop/Codex Routing Dashboard.command','executable',
+                ('#!/bin/sh\nexec ' + shlex.join(arguments + ['open'] + tail) + '\n').encode()))
+        if login:
+            result.append((user/'Library/LaunchAgents/org.codex-model-routing.dashboard.plist', 'bytes',
+                plistlib.dumps({'Label':'org.codex-model-routing.dashboard', 'ProgramArguments':arguments+['_login']+tail,
+                                'RunAtLoad':True})))
+    else:
+        def entry(browser): return ('[Desktop Entry]\nType=Application\nName=Codex Routing Dashboard\nTerminal=false\nExec=' + desktop_exec(arguments+['_login']+(['--open-browser'] if browser else [])+tail) + '\n').encode()
+        if shortcuts: result.append((user/'.local/share/applications/codex-routing-dashboard.desktop','executable',entry(True)))
+        if login: result.append((user/'.config/autostart/codex-routing-dashboard.desktop','bytes',entry(False)))
+    return result
+
+
+def windows_shortcut(path, arguments, helper, expected=None):
+    python = Path(arguments[0])
+    pythonw = python.with_name('pythonw.exe')
+    if pythonw.is_file(): target, args = str(pythonw), arguments[1:]
+    else:
+        target = 'powershell.exe'
+        # The supported bootstrap wrapper hides the console while Python runs.
+        script = Path(arguments[2]).with_name('bootstrap.ps1')
+        command = arguments[3]
+        user = arguments[arguments.index('--user-root') + 1]
+        codex = arguments[arguments.index('--codex-home') + 1]
+        args = ['-NoProfile', '-WindowStyle', 'Hidden', '-File', str(script), '-Command', command,
+                '-PythonPath', str(python), '-UserRoot', user, '-CodexHome', codex]
+    descriptor,name=tempfile.mkstemp(prefix='.routing-shortcut-',suffix='.lnk',dir=path.parent)
+    os.close(descriptor);temporary=Path(name);temporary.unlink()
+    try:
+        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(helper),
+                        '-Path', str(temporary), '-Target', target, '-Arguments', subprocess.list2cmdline(args)],
+                       capture_output=True, text=True, timeout=10, check=True)
+        if expected is None:
+            # Windows rename refuses to overwrite a file created concurrently.
+            os.rename(temporary,path)
+        else:
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+                raise OSError('owned_shortcut_changed')
+            os.replace(temporary,path)
+    finally:temporary.unlink(missing_ok=True)

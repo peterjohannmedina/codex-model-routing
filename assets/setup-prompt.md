@@ -1,14 +1,26 @@
-Set up the Codex model router from the local package directory containing this prompt.
+Set up the Codex CLI model-routing skill from this reviewed local package.
 
-Treat this as a local Codex configuration task and complete it end to end.
+Read README.md, SKILL.md, references/bootstrap.md and references/setup-prompt.md.
+Check Codex CLI and an existing Python 3.11+ interpreter. Use the supported
+scripts/bootstrap.ps1 on Windows or scripts/bootstrap.sh on Linux/macOS, with
+install plus explicit start/open-browser options. Optional Windows user shortcuts
+are welcome. Preserve unrelated work, profiles, prompts, global instructions,
+configuration, credentials and history. Do not change the pinned CLI model.
 
-1. Read the entire source package before changing anything, including `SKILL.md`, relevant files under `references/`, `agents/openai.yaml`, `assets/AGENTS.md.snippet`, every file under `assets/agents/`, and the installers under `scripts/`.
-2. Verify native model/effort pairs against the active catalog. Extra providers are optional and disabled by default. Do not probe or invoke local inference or Decisions during installation. Install the complete portable launcher/runtime/configuration package; preserve existing local profiles and user credentials.
-3. Install the entire directory as the personal skill at `~/.codex/skills/codex-model-routing`. Do not install only `SKILL.md`; its references, assets, UI metadata, and installers are part of the package.
-4. Run `scripts/install.sh` on macOS or Linux, or `scripts/install.ps1` on Windows, to install or update the skill, copy `assets/agents/*.toml` into `~/.codex/agents`, and merge the marked router block into `~/.codex/AGENTS.md` without duplicating it. If the appropriate script cannot run, perform those same operations manually and idempotently.
-5. Do not change the user's default main-session model. Do not enable `assets/profiles/routing-bypass.config.toml`, change approval policy, or change sandbox permissions; routing and permissions are separate.
-6. Verify the installed skill has valid YAML frontmatter, the installed package matches the source files, every source custom-agent TOML is present, the portable launchers, routing_runtime.py, routing_decision.py, optional credential-entry helper and configuration sample are present, the `codex-routing` custom prompt is installed under the Codex prompts directory, and `~/.codex/AGENTS.md` contains exactly one `codex-model-routing` marked block. Check the active instruction chain; a higher-priority `AGENTS.override.md` can supersede it.
-7. Confirm that the routing policy plans the main model and reasoning effort from the hardest tightly coupled phase, scopes any subagents before execution, prefers staying in a coherent thread when context-transfer costs exceed savings, and switches or delegates only when the remaining work clearly repays context, coordination, and rework costs.
-8. If Codex does not detect the updated skill or agents immediately, tell me to start a new chat or restart Codex. Do not claim installation succeeded until the filesystem checks pass.
+Do not install dependencies, change permissions, activate native telemetry,
+configure keys, enable login startup or make paid calls silently. If an unmanaged
+installation exists, inspect it and prepare its backup/adoption choice before
+asking to use --adopt-existing. Never reset a dirty checkout.
 
-Finish with a concise report containing the installed skill path, installed custom-agent files, whether global routing was enabled, whether any model substitution was necessary, validation results, and whether a restart or new chat is needed.
+Run doctor/status and verify installed SKILL.md name/path and package integrity.
+Use the installed open command again and verify the same authenticated managed
+instance is reused. Do not claim visible browser opening or live telemetry from
+an attempted launch or demonstration data. If sockets/GUI access are blocked,
+report the exact stage without bypassing policy. If this chat's skill catalog
+cannot refresh, tell me to start a new chat instead of claiming discovery.
+
+Report version/content revision, interpreter, skill path, dashboard URL, tested
+reopening and the open/status/stop/update/repair/rollback/uninstall commands.
+Distinguish recommendations from actual switching of a pinned native CLI model.
+The runtime is a supporting background process, not a desktop app or EXE; skill
+installation alone does not enable it or optional next-login startup.
