@@ -29,6 +29,10 @@ ERROR_HINTS={
     'owned_files_changed_review_then_repair':'Package integrity check failed. Review local edits before repair.',
     'existing_unmanaged_skill_requires_review':'An unmanaged skill exists. Review it before explicitly choosing --adopt-existing; it will be backed up.',
     'private_state_permissions_required':'State permissions are not private. No ACL or security policy was changed; review permissions separately.',
+    'private_state_probe_execution_failed':'Windows could not execute the read-only permission checker. Review the launcher execution context and its AuthorizationManager/application-control diagnostics. No ACL or execution-policy setting was changed; do not bypass the checker.',
+    'private_state_probe_unavailable':'The read-only permission check is unavailable. This is not a verdict that the directory is unsafe. Review access in an approved execution context; no permission workaround was attempted.',
+    'private_state_probe_timeout':'The read-only permission checker timed out. Startup remains blocked; no permissions or security policy were changed.',
+    'private_state_probe_invalid_response':'The permission checker did not return its expected verdict. Startup remains blocked; no permissions or security policy were changed.',
     'loopback_port_unavailable_or_policy_blocked':'The loopback port is occupied or blocked. Do not bypass policy or kill an unrelated process; inspect status or choose an explicit port.',
     'approved_telemetry_setup_required':'Telemetry needs its separate approved setup. Installation and start never activate a Codex exporter.',
     'approved_telemetry_scope_changed':'Telemetry differs from its approved setup. Review it; do not replace exporters automatically.',
@@ -39,6 +43,28 @@ ERROR_HINTS={
     'state_must_be_outside_repository':'Choose a Codex home outside Git; private control state and backups must not be committed.',
 }
 _children={}
+
+
+def show_windows_error(code, hint):
+    """A hidden pythonw launcher must not fail silently. Fixed text only."""
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None,
+            'Codex Routing Dashboard could not launch.\n\n'+code+'\n\n'+hint,
+            'Codex Routing Dashboard', 0x10)
+        return True
+    except (OSError, AttributeError): return False
+
+
+def emit(result):
+    # pythonw normally has no standard streams; never display successful output
+    # containing a private browser handoff path or any capability.
+    if sys.stdout is not None:
+        print(json.dumps(result))
+    elif os.name == 'nt' and result.get('error'):
+        code = result['error'] if result['error'] in ERROR_HINTS else 'bootstrap_operation_failed'
+        show_windows_error(code, ERROR_HINTS.get(code,
+            'Run the installed bootstrap in a visible terminal for a fixed diagnostic code. No policy bypass or paid call was attempted.'))
 
 
 def controller(paths, action='status'):
@@ -281,11 +307,11 @@ def main(argv=None):
                 elif args.command=='open':result=open_dashboard(paths,args.otel_receiver,not args.no_browser)
                 else:result=stop(paths)
         result.setdefault('codex_cli_found',shutil.which('codex') is not None)
-        print(json.dumps(result));return 0
+        emit(result);return 0
     except (OSError,ValueError,KeyError,TypeError,UnicodeError,subprocess.SubprocessError,http.client.HTTPException) as error:
         # Raw exceptions may contain private paths or capability headers.
         code=str(error) if str(error) in ERROR_HINTS else 'bootstrap_operation_failed'
-        print(json.dumps({'error':code,'hint':ERROR_HINTS.get(code,'Check dependencies, private state permissions, owned-file integrity, explicit choices and loopback availability; no policy bypass or paid call was attempted.')}));return 2
+        emit({'error':code,'hint':ERROR_HINTS.get(code,'Check dependencies, private state permissions, owned-file integrity, explicit choices and loopback availability; no policy bypass or paid call was attempted.')});return 2
 
 
 if __name__=='__main__':raise SystemExit(main())
