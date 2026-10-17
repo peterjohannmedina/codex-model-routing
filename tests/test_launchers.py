@@ -94,6 +94,118 @@ class WindowsLauncher(unittest.TestCase):
         result = self.launch('-Provider', 'decisions', '-AllowApi', '-RoutingScriptPath', str(fake))
         self.assertTrue(result['dummy_matches'])
 
+    def fake_decisions_runtime(self):
+        fake=self.fixture/'fake-decisions-runtime.py'
+        fake.write_text('import sys,json\nsys.path.insert(0,'+repr(str(ROOT/'scripts'))+')\n'
+            'import routing_runtime as runtime\n'
+            'def wire(body,key,timeout):\n'
+            '    assert key=="offline-placeholder", "synthetic key missing"\n'
+            '    ids=[c["value"] for c in json.loads(body)["questions"][0]["choices"]]\n'
+            '    return json.dumps({"answers":[{"type":"choice","name":"route","choice":"luna_high","confidence":0.9,"probabilities":[{"value":i,"probability":int(i=="luna_high")} for i in ids]}],"usage":{"input_tokens":11,"output_tokens":0}}).encode()\n'
+            'runtime.core.post_decisions=wire\n'
+            'import urllib.request\nurllib.request.build_opener=lambda *a,**k: (_ for _ in ()).throw(AssertionError("real HTTP forbidden"))\n'
+            'raise SystemExit(runtime.main(sys.argv[1:]))\n')
+        return fake
+
+    def test_saved_decisions_configuration_invokes_wire_through_secure_launcher(self):
+        self.make_synthetic_credential()
+        self.config.write_text(json.dumps({'schema_version':1,'decisions':{'enabled':True,'api_key_env':'SYNTHETIC_DECISIONS_KEY'}}))
+        result=self.launch('-AllowApi','-RoutingScriptPath',str(self.fake_decisions_runtime()),
+                           env=dict(os.environ,SYNTHETIC_DECISIONS_KEY=''))
+        self.assertEqual(result['recommendation']['id'],'luna_high')
+        self.assertEqual(result['provenance']['evaluator_status'],'succeeded')
+        self.assertEqual(result['provenance']['credential_source'],'explicit_windows_dpapi')
+        self.assertEqual(result['observations']['evaluator_attempts'],1)
+        sys.path.insert(0,str(ROOT/'scripts'))
+        import routing_state as state
+        row=state.Ledger(self.fixture).snapshot()[0]
+        self.assertEqual(row['requested_provider'],'decisions');self.assertTrue(row['evaluator_succeeded'])
+        self.assertNotIn('offline-placeholder',json.dumps(row))
+
+    def test_credential_error_is_recorded_without_disabling_requested_provider(self):
+        self.config.write_text(json.dumps({'schema_version':1,'decisions':{'enabled':True}}))
+        result=self.launch('-AllowApi','-RoutingScriptPath',str(self.fake_decisions_runtime()))
+        self.assertEqual(result['provenance']['requested_provider'],'decisions')
+        self.assertEqual(result['provenance']['evaluator_reason'],'local_credential_error')
+        self.assertFalse(result['provenance']['evaluator_attempted'])
+        import routing_state as state
+        row=state.Ledger(self.fixture).snapshot()[0]
+        self.assertTrue(row['decisions_enabled']);self.assertEqual(row['evaluator_reason'],'local_credential_error')
+
+    def test_missing_explicit_store_does_not_use_an_ambient_key(self):
+        self.credential.unlink()
+        self.config.write_text(json.dumps({'schema_version':1,'decisions':{'enabled':True}}))
+        result=self.launch('-AllowApi','-RoutingScriptPath',str(self.fake_decisions_runtime()),
+                           env=dict(os.environ,OPENAI_API_KEY='offline-placeholder'))
+        self.assertEqual(result['provenance']['evaluator_reason'],'local_credential_error')
+        self.assertEqual(result['observations']['evaluator_attempts'],0)
+        self.assertEqual(result['provenance']['credential_source'],'none')
+
+    def test_environment_key_skips_store_discovery_without_explicit_path(self):
+        self.config.write_text(json.dumps({'schema_version':1,'decisions':{'enabled':True,'api_key_env':'SYNTHETIC_DECISIONS_KEY'}}))
+        skill=self.fixture/'trap-skill';(skill/'scripts').mkdir(parents=True)
+        (skill/'scripts/Resolve-RoutingCredential.ps1').write_text("throw 'store discovery forbidden'\n")
+        result=subprocess.run(['powershell.exe','-NoProfile','-File',str(ROOT/'scripts/Invoke-Routing.ps1'),
+            '-PacketPath',str(self.packet),'-ConfigPath',str(self.config),'-PythonPath',sys.executable,
+            '-SkillRoot',str(skill),'-PreflightScriptPath',str(ROOT/'scripts/routing_runtime.py'),
+            '-RoutingScriptPath',str(self.fake_decisions_runtime()),'-AllowApi'],capture_output=True,text=True,
+            timeout=20,env=dict(os.environ,SYNTHETIC_DECISIONS_KEY='offline-placeholder'))
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(json.loads(result.stdout)['provenance']['credential_source'],'environment')
+
+    def test_known_store_resolution_precedence_without_decryption(self):
+        runner=self.fixture/'resolve.ps1'
+        runner.write_text('param([string]$Helper,[string]$Portable,[string]$Legacy,[string]$Explicit)\n'
+            '. $Helper\nResolve-RoutingCredential -PortablePath $Portable -LegacyPath $Legacy -ExplicitPath $Explicit | ConvertTo-Json -Compress\n')
+        portable=self.fixture/'portable.dpapi';legacy=self.fixture/'legacy.dpapi';explicit=self.fixture/'missing-explicit.dpapi'
+        def resolve(path=None):
+            args=['powershell.exe','-NoProfile','-File',str(runner),'-Helper',str(ROOT/'scripts/Resolve-RoutingCredential.ps1'),
+                  '-Portable',str(portable),'-Legacy',str(legacy)]
+            if path:args+=['-Explicit',str(path)]
+            result=subprocess.run(args,capture_output=True,text=True,timeout=10)
+            self.assertEqual(result.returncode,0,result.stderr);return json.loads(result.stdout)
+        self.assertEqual(resolve()['Source'],'none')
+        legacy.write_text('intentionally invalid synthetic cipher')
+        self.assertEqual(resolve()['Source'],'legacy_windows_dpapi')
+        portable.write_text('intentionally invalid synthetic cipher')
+        self.assertEqual(resolve()['Source'],'windows_dpapi')
+        self.assertEqual(resolve(explicit)['Source'],'explicit_windows_dpapi')
+
+    def test_tiny_validation_preflight_never_loads_or_records(self):
+        self.config.write_text(json.dumps({'schema_version':1,'decisions':{'enabled':True}}))
+        result=subprocess.run(['powershell.exe','-NoProfile','-File',str(ROOT/'scripts/Test-DecisionsWiring.ps1'),
+            '-ConfigPath',str(self.config),'-CredentialPath',str(self.credential),'-PythonPath',sys.executable],
+            capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stderr)
+        value=json.loads(result.stdout)
+        self.assertFalse(value['preflight']['may_load_credential'])
+        self.assertEqual(value['preflight']['block_reason'],'api_not_authorized')
+        self.assertFalse((self.fixture/'usage.sqlite3').exists())
+
+    def test_tiny_validation_live_branch_with_fake_wire_records_exactly_one_attempt(self):
+        self.make_synthetic_credential()
+        self.config.write_text(json.dumps({'schema_version':1,'decisions':{'enabled':True,'timeout_seconds':9}}))
+        marker=self.fixture/'fake-wire-count.txt'
+        (self.fixture/'sitecustomize.py').write_text('import sys,json\nfrom pathlib import Path\n'
+            'sys.path.insert(0,'+repr(str(ROOT/'scripts'))+')\nimport routing_decision as core\n'
+            'def fake(body,key,timeout):\n'
+            ' assert key=="offline-placeholder" and timeout==3\n'
+            ' ids=[c["value"] for c in json.loads(body)["questions"][0]["choices"]]\n'
+            ' assert len(ids)==2\n'
+            ' with Path('+repr(str(marker))+').open("a") as f:f.write("1")\n'
+            ' return json.dumps({"answers":[{"type":"choice","name":"route","choice":"use_luna","confidence":0.9,"probabilities":[{"value":i,"probability":int(i=="use_luna")} for i in ids]}]}).encode()\n'
+            'core.post_decisions=fake\nimport urllib.request\n'
+            'urllib.request.build_opener=lambda *a,**k: (_ for _ in ()).throw(AssertionError("real HTTP forbidden"))\n')
+        result=subprocess.run(['powershell.exe','-NoProfile','-File',str(ROOT/'scripts/Test-DecisionsWiring.ps1'),
+            '-ConfigPath',str(self.config),'-CredentialPath',str(self.credential),'-PythonPath',sys.executable,'-AllowApi'],
+            capture_output=True,text=True,timeout=25,env=dict(os.environ,PYTHONPATH=str(self.fixture)))
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(marker.read_text(),'1')
+        value=json.loads(result.stdout);self.assertEqual(value['provenance']['evaluator_status'],'succeeded')
+        import routing_state as state
+        events=state.Ledger(self.fixture).snapshot()
+        self.assertEqual(len(events),1);self.assertEqual(events[0]['evaluator_attempts'],1)
+
     def test_readiness_loss_preserves_required_route_failure(self):
         packet = json.loads(self.packet.read_text())
         packet.update(local_work_eligible=True, require_local=True)

@@ -161,4 +161,15 @@ async function catalogControls(){
   ui.forbid();await ui.nodes['catalog-refresh'].listeners.click();
   assert.equal(ui.nodes['catalog-refresh'].disabled,true);assert.equal(ui.nodes['native-managed'].disabled,true);
 }
-(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();if(!selected||selected==='expansion')await observationExpansion();if(!selected||selected==='catalog')await catalogControls();console.log('Dashboard navigation, save, poll, authorization, catalog controls and expansion regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
+async function decisionProvenance(){
+  const ui=boot('');await flush();await flush();
+  ui.snapshot().events=[{source:'router',session_id:'unassigned',request_id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    requested_provider:'decisions',used_provider:'rules',evaluator_status:'blocked',evaluator_reason:'local_credential_error',
+    credential_source:'none',evaluator_attempts:0,observed_at:'2026-10-17T00:00:00Z'}];
+  ui.poll();await flush();
+  assert.match(ui.nodes['decisions-observed'].textContent,/blocked \/ local_credential_error/);
+  const labels=ui.nodes.events.children[0].children[1].children.map(n=>n.textContent);
+  assert.ok(labels.includes('decisions / rules'));assert.ok(labels.includes('blocked / local_credential_error'));
+  assert.ok(labels.includes('Credential delivery'));
+}
+(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();if(!selected||selected==='expansion')await observationExpansion();if(!selected||selected==='catalog')await catalogControls();if(!selected||selected==='decisions')await decisionProvenance();console.log('Dashboard navigation, save, poll, authorization, catalog controls and expansion regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
