@@ -14,9 +14,25 @@ import tempfile
 def private(path, helper):
     path = Path(path)
     if os.name == 'nt':
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(helper),
-                                 '-LiteralPath', str(path)], capture_output=True, text=True, timeout=5)
-        return result.returncode == 0 and json.loads(result.stdout) == {'private': True}
+        try:
+            result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(helper),
+                                     '-LiteralPath', str(path)], stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            raise ValueError('private_state_probe_timeout') from None
+        except OSError:
+            raise ValueError('private_state_probe_unavailable') from None
+        if result.returncode != 0:
+            raise ValueError('private_state_probe_execution_failed')
+        try: verdict = json.loads(result.stdout)
+        except (ValueError, TypeError):
+            raise ValueError('private_state_probe_invalid_response') from None
+        if isinstance(verdict, dict) and set(verdict) == {'private'} and verdict['private'] is True: return True
+        if isinstance(verdict, dict) and verdict.get('private') is False:
+            if verdict.get('reason') == 'acl_probe_unavailable':
+                raise ValueError('private_state_probe_unavailable')
+            return False
+        raise ValueError('private_state_probe_invalid_response')
     info = path.stat()
     return info.st_uid == os.getuid() and not stat.S_IMODE(info.st_mode) & (0o022 if path.is_dir() else 0o077)
 

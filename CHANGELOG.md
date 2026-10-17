@@ -2,6 +2,12 @@
 
 ## Unreleased - 2026-10-17
 
+- Distinguish an unavailable/blocked permission checker from an unsafe ACL
+  verdict, preserving fail-closed behavior and fixed diagnostics without raw
+  subprocess output. Never change ACLs or execution policy to repair a launch.
+- Surface fixed startup errors from Windows pythonw shortcuts instead of failing
+  silently. Add synthetic Windows .lnk coverage for launcher exit, repeated open,
+  authenticated data, controlled stop and recovery from stale lifecycle files.
 - Retain bounded admitted choices, validated probabilities, confidence, selection
   latency and policy/evaluator provenance in new router records. Show these in
   Activity with explicit older-record, billing and task-quality limits. Exclude

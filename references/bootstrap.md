@@ -109,6 +109,35 @@ briefly open Terminal; that command returns and the terminal is not a server
 dependency. No EXE is needed for this
 skill-first scope; a future signed bundle would mainly remove the Python prerequisite.
 
+## Diagnose a silent Windows launch
+
+The hidden `pythonw.exe` shortcut now displays a fixed error code and guidance
+when startup fails; successful handoff paths and capabilities are never displayed
+in that error dialog. To capture the same diagnostic in a terminal, run the
+installed `bootstrap.ps1 -Command open` with your existing Python interpreter.
+Do not add execution-policy bypass flags or change ACLs to force it to start.
+
+`private_state_permissions_required` means the checker returned an unsafe ACL
+verdict. `private_state_probe_execution_failed` means the read-only PowerShell
+checker could not execute, for example an AuthorizationManager/application-control
+denial; it does **not** establish that the directory's ACL is unsafe. Unavailable,
+timeout and malformed probe results have separate fixed codes. All block startup.
+Review the approved execution context or applicable policy with its owner rather
+than disabling the checker, changing execution policy or silently using another
+permission path. No automatic permission repair is implemented.
+
+`run.json`/`ready.json` and receiver status are historical metadata, not proof of
+a live server. An abrupt process termination may leave them behind. The manager
+checks its authenticated controller and reuses a matching live instance; a stale
+record does not authorize killing a PID or replacing an unmanaged listener. A
+control connection uses a three-second socket timeout, allowing Windows to report an
+explicit closed-port refusal. Timeout, denial, reset and protocol failures remain
+unverified failures; none authorize listener replacement or automatic retries. A
+controlled authenticated stop followed by `open` is the supported relaunch.
+Normal launch starts a detached background process; it does not install a crash
+watchdog, restart after a reboot, or enable login startup. Login startup remains
+a separate explicit choice, and actual login behavior needs host verification.
+
 ## Security and bounded control
 
 Managed control is disabled on the ordinary foreground dashboard. The manager
