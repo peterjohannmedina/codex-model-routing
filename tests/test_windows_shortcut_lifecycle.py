@@ -29,9 +29,16 @@ class WindowsShortcutLifecycle(Fixture):
             # addition is --no-browser, avoiding a CI user's real browser/profile.
             literal=str(shortcut).replace("'","''")
             result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',
-                "$p=Start-Process -FilePath '"+literal+"' -PassThru; if(-not $p.WaitForExit(30000)){throw 'launcher_exit_unconfirmed'}; exit $p.ExitCode"],
+                "$p=Start-Process -FilePath '"+literal+"' -PassThru; if(-not $p.WaitForExit(30000)){$p.Kill(); exit 124}; exit $p.ExitCode"],
                 capture_output=True,text=True,timeout=40)
-            self.assertEqual(result.returncode,0,result.stderr)
+            if result.returncode != 0:
+                # Same pythonw target/arguments, now with captured streams so a
+                # fixed bootstrap error can be diagnosed without automating a
+                # modal dialog. This never changes permissions or skips checks.
+                diagnostic=subprocess.run([str(pythonw),*arguments[1:]],capture_output=True,text=True,timeout=25)
+                try: fixed=json.loads(diagnostic.stdout).get('error','no_error')
+                except (ValueError,TypeError): fixed='diagnostic_unavailable'
+                self.fail('shortcut_exit='+str(result.returncode)+'; same_pythonw_diagnostic='+fixed)
             live=bootstrap.controller(self.paths)
             self.assertTrue(live,'Server must survive shortcut/launcher command exit')
             return live
