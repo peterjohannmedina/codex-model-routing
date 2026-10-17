@@ -171,5 +171,24 @@ async function decisionProvenance(){
   const labels=ui.nodes.events.children[0].children[1].children.map(n=>n.textContent);
   assert.ok(labels.includes('decisions / rules'));assert.ok(labels.includes('blocked / local_credential_error'));
   assert.ok(labels.includes('Credential delivery'));
+  ui.snapshot().events[0]={...ui.snapshot().events[0],selected_candidate_id:'sol_low',selected_action:'stay',
+    evaluator_model:'gpt-6-luna',policy_version:'v1',confidence:.78,selection_elapsed_ms:110,elapsed_ms:125,
+    evaluator_attempted:true,evaluator_succeeded:true,evaluator_fallback:false,
+    evaluator_usage:{input_tokens:384,output_tokens:0},admitted_choices:[
+      {id:'sol_low',model:'gpt-6.1-sol',effort:'low',action:'stay',adapter:'native'},
+      {id:'luna_high',model:'gpt-6-luna',effort:'high',action:'delegate',adapter:'native'}],
+    choice_probabilities:{sol_low:.78,luna_high:.22}};
+  ui.poll();await flush();
+  const detail=ui.nodes.events.children[0].children[1].children.map(n=>n.textContent);
+  assert.ok(detail.includes('Evaluator confidence (not task quality)'));assert.ok(detail.includes('0.780'));
+  assert.ok(detail.includes('sol_low / stay'));assert.ok(detail.includes('110 / 125'));
+  assert.ok(detail.includes('true / true / false'));
+  assert.ok(detail.some(t=>t.includes('luna_high: gpt-6-luna / high / delegate / native (probability 0.220)')));
+  assert.ok(detail.includes('0.00003840; billed cost unknown'));
+  assert.ok(detail.some(t=>t.includes('session UUID alone does not link')));
+  delete ui.snapshot().events[0].confidence;delete ui.snapshot().events[0].admitted_choices;
+  ui.poll();await flush();
+  const old=ui.nodes.events.children[0].children[1].children.map(n=>n.textContent);
+  assert.ok(old.includes('Not recorded'));
 }
 (async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();if(!selected||selected==='expansion')await observationExpansion();if(!selected||selected==='catalog')await catalogControls();if(!selected||selected==='decisions')await decisionProvenance();console.log('Dashboard navigation, save, poll, authorization, catalog controls and expansion regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});

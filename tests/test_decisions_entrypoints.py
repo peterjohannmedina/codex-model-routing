@@ -63,6 +63,13 @@ class EntryPoints(unittest.TestCase):
             self.assertEqual(row['evaluator_attempts'],1);self.assertEqual(row['evaluator_usage']['input_tokens'],11)
             self.assertEqual(row['requested_provider'],'decisions');self.assertEqual(row['used_provider'],'decisions')
             self.assertEqual(row['credential_source'],'environment');self.assertTrue(row['evaluator_succeeded'])
+            self.assertEqual(row['confidence'],0.9);self.assertEqual(row['evaluator_model'],'gpt-6-luna')
+            self.assertEqual(row['selected_candidate_id'],'luna_high');self.assertEqual(row['selected_action'],'delegate')
+            self.assertEqual(row['choice_probabilities']['luna_high'],1)
+            self.assertEqual({c['id'] for c in row['admitted_choices']},{'sol_medium','luna_high','astra_low'})
+            self.assertIsInstance(row['selection_elapsed_ms'],int)
+            for forbidden in ('summary','description','request_sha256','probabilities_private'):
+                self.assertNotIn(forbidden,json.dumps(row))
 
     def test_explicit_rules_and_no_spending_consent_never_call(self):
         for entry in (runtime.main,core.main):
@@ -70,6 +77,15 @@ class EntryPoints(unittest.TestCase):
                 code,result,calls=self.invoke(entry,*args)
                 self.assertEqual(code,0);self.assertFalse(calls);self.assertFalse(result['provenance']['evaluator_attempted'])
                 self.assertEqual(result['provenance']['evaluator_reason'],reason)
+
+    def test_local_execution_elapsed_is_not_persisted_as_provider_selection_latency(self):
+        result=core.recommend(core.Request.parse(packet()),core.RulesProvider())
+        result['provenance'].update(elapsed_ms=987,selection_elapsed_ms=12)
+        result['execution']={'status':'completed'}
+        with patch.object(runtime,'execute_local',return_value=result):
+            code,outcome,calls=self.invoke(runtime.main,'--execute-local','--allow-local-inference')
+        row=next(e for e in state.Ledger(self.root).snapshot() if e['request_id']==outcome['ledger']['request_id'])
+        self.assertEqual(code,0);self.assertFalse(calls);self.assertEqual(row['selection_elapsed_ms'],12)
 
     def test_caps_apply_to_compatibility_entrypoint_before_key_access(self):
         self.settings['decisions']['max_cost_usd']=0.01;self.save()

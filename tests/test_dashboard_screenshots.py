@@ -4,11 +4,19 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from dashboard_screenshot_fixture import ROOT, load_fixture, reviewed_assets, seed_fixture
 
 
 class ScreenshotFixture(unittest.TestCase):
+    def test_decision_fixture_rejects_selected_route_mismatch(self):
+        fixture = load_fixture()
+        event = next(e for e in fixture['events'] if e.get('selected_candidate_id'))
+        event['model'] = 'gpt-6-luna'
+        with patch('dashboard_screenshot_fixture.json.loads',return_value=fixture):
+            with self.assertRaisesRegex(ValueError,'fixture_selected_route_mismatch'): load_fixture()
+
     def test_published_images_match_capture_provenance(self):
         directory = ROOT / 'docs/images'
         provenance = json.loads((directory / 'dashboard-provenance.json').read_text(encoding='utf-8'))
