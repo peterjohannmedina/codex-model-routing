@@ -29,7 +29,7 @@ class WindowsShortcutLifecycle(Fixture):
             # addition is --no-browser, avoiding a CI user's real browser/profile.
             literal=str(shortcut).replace("'","''")
             result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',
-                "$p=Start-Process -FilePath '"+literal+"' -PassThru; if(-not $p.WaitForExit(30000)){$p.Kill(); exit 124}; exit $p.ExitCode"],
+                "$p=Start-Process -FilePath '"+literal+"' -PassThru; if(-not $p.WaitForExit(30000)){$p.Kill(); if(-not $p.WaitForExit(5000)){throw 'fixture_launcher_stop_unconfirmed'}; exit 124}; exit $p.ExitCode"],
                 capture_output=True,text=True,timeout=40)
             if result.returncode != 0:
                 # Same pythonw target/arguments, now with captured streams so a

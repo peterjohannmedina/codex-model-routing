@@ -1,6 +1,7 @@
 """Fixed diagnostics only; no host ACL scripts, GUI, sockets or credentials."""
 from contextlib import redirect_stdout
 import io
+import http.client
 import json
 from pathlib import Path
 import subprocess
@@ -95,6 +96,23 @@ class LauncherDiagnostics(unittest.TestCase):
         with patch.object(installation,'read_json',return_value={'instance_id':'owned'}):
             bootstrap.cleanup_server(SimpleNamespace(run=run,cap=cap),'owned',None)
         self.assertEqual(order,['cap','run'])
+
+    def test_controller_only_explicit_refusal_is_stale_other_failures_stay_closed(self):
+        paths=SimpleNamespace(run=SimpleNamespace(is_file=lambda:True),service=object(),helper=object(),
+                              cap=SimpleNamespace(read_text=lambda **kwargs:'a'*43))
+        record={'port':8765,'instance_id':'synthetic'}
+        cases=[(ConnectionRefusedError(),None),(TimeoutError(),'controller_connection_timeout'),
+               (PermissionError(),'controller_connection_denied'),(ConnectionResetError(),'controller_connection_reset'),
+               (http.client.BadStatusLine('private data'),'controller_protocol_failed'),(OSError('private data'),'controller_connection_failed')]
+        for error,expected in cases:
+            with patch.object(bootstrap.platform,'private',return_value=True),patch.object(installation,'read_json',return_value=record), \
+                 patch.object(bootstrap.http.client,'HTTPConnection') as connection:
+                connection.return_value.request.side_effect=error
+                if expected:
+                    with self.assertRaisesRegex(ValueError,'^'+expected+'$'):bootstrap.controller(paths)
+                else:self.assertIsNone(bootstrap.controller(paths))
+                self.assertEqual(connection.return_value.request.call_count,1)
+                connection.return_value.close.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()

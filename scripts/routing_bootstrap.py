@@ -40,6 +40,11 @@ ERROR_HINTS={
     'receiver_start_failed':'The background receiver could not start. Review dependency, permission and listener diagnostics in an approved context; no policy bypass was attempted.',
     'receiver_start_failed_see_status':'The background receiver could not start. Review dependency, permission and listener diagnostics in an approved context; no policy bypass was attempted.',
     'controller_rejected_or_unmanaged_server':'The listener is not the authenticated managed instance. It was not stopped or replaced.',
+    'controller_connection_timeout':'The managed controller timed out. Its state is unverified; no listener was replaced or automatically retried.',
+    'controller_connection_denied':'Access to the managed controller was denied. No alternate client or policy bypass was attempted.',
+    'controller_connection_reset':'The managed controller connection was reset. Its state is unverified; no listener was replaced or automatically retried.',
+    'controller_protocol_failed':'The managed controller did not return a valid HTTP response. No listener was replaced or automatically retried.',
+    'controller_connection_failed':'The managed controller connection failed. Its state is unverified; no listener was replaced or automatically retried.',
     'not_installed':'Install the skill with the supported bootstrap first.',
     'install_skill_first':'Install the skill with the supported bootstrap first.',
     'state_must_be_outside_repository':'Choose a Codex home outside Git; private control state and backups must not be committed.',
@@ -88,6 +93,11 @@ def controller(paths, action='status'):
         if result.get('instance_id')!=record.get('instance_id'):raise ValueError('receiver_identity_mismatch')
         return result
     except ConnectionRefusedError:return None
+    except TimeoutError:raise ValueError('controller_connection_timeout') from None
+    except PermissionError:raise ValueError('controller_connection_denied') from None
+    except ConnectionResetError:raise ValueError('controller_connection_reset') from None
+    except http.client.HTTPException:raise ValueError('controller_protocol_failed') from None
+    except OSError:raise ValueError('controller_connection_failed') from None
     finally:connection.close()
 
 
