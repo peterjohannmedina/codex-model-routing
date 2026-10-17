@@ -85,8 +85,8 @@ def controller(paths, action='status'):
     token=paths.cap.read_text(encoding='ascii').strip()
     if not re.fullmatch(r'[A-Za-z0-9_-]{43,128}',token):raise ValueError('invalid_control_capability')
     # Windows can take more than one second to return an explicit refusal for
-    # a closed local port. Wait a bounded three seconds; timeout is still an
-    # unverified failure, never permission to replace a listener.
+    # a closed local port. Each socket operation has a three-second timeout;
+    # timeout is still an unverified failure, never permission to replace a listener.
     connection=http.client.HTTPConnection('127.0.0.1',port,timeout=CONTROL_TIMEOUT_SECONDS)
     try:
         connection.request('POST','/api/lifecycle',json.dumps({'action':action}),
