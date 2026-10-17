@@ -130,6 +130,9 @@ permission path. No automatic permission repair is implemented.
 a live server. An abrupt process termination may leave them behind. The manager
 checks its authenticated controller and reuses a matching live instance; a stale
 record does not authorize killing a PID or replacing an unmanaged listener. A
+control request waits at most three seconds, allowing Windows to report an
+explicit closed-port refusal. Timeout, denial, reset and protocol failures remain
+unverified failures; none authorize listener replacement or automatic retries. A
 controlled authenticated stop followed by `open` is the supported relaunch.
 Normal launch starts a detached background process; it does not install a crash
 watchdog, restart after a reboot, or enable login startup. Login startup remains

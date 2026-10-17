@@ -50,6 +50,7 @@ ERROR_HINTS={
     'state_must_be_outside_repository':'Choose a Codex home outside Git; private control state and backups must not be committed.',
 }
 _children={}
+CONTROL_TIMEOUT_SECONDS=3
 
 
 def show_windows_error(code, hint):
@@ -83,7 +84,10 @@ def controller(paths, action='status'):
     if type(port) is not int or not 1<=port<=65535:raise ValueError('invalid_receiver_state')
     token=paths.cap.read_text(encoding='ascii').strip()
     if not re.fullmatch(r'[A-Za-z0-9_-]{43,128}',token):raise ValueError('invalid_control_capability')
-    connection=http.client.HTTPConnection('127.0.0.1',port,timeout=1)
+    # Windows can take more than one second to return an explicit refusal for
+    # a closed local port. Wait a bounded three seconds; timeout is still an
+    # unverified failure, never permission to replace a listener.
+    connection=http.client.HTTPConnection('127.0.0.1',port,timeout=CONTROL_TIMEOUT_SECONDS)
     try:
         connection.request('POST','/api/lifecycle',json.dumps({'action':action}),
             {'Content-Type':'application/json','X-Routing-Control':token})

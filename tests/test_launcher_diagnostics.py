@@ -111,6 +111,7 @@ class LauncherDiagnostics(unittest.TestCase):
                 if expected:
                     with self.assertRaisesRegex(ValueError,'^'+expected+'$'):bootstrap.controller(paths)
                 else:self.assertIsNone(bootstrap.controller(paths))
+                connection.assert_called_once_with('127.0.0.1',8765,timeout=3)
                 self.assertEqual(connection.return_value.request.call_count,1)
                 connection.return_value.close.assert_called_once()
 
