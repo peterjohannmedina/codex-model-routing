@@ -100,7 +100,41 @@
         "input_tokens": 640,
         "output_tokens": 0
       },
-      "observed_at": "2026-10-13T11:00:00+00:00"
+      "observed_at": "2026-10-13T11:00:00+00:00",
+      "requested_provider": "decisions",
+      "used_provider": "decisions",
+      "evaluator_status": "succeeded",
+      "evaluator_attempted": true,
+      "evaluator_succeeded": true,
+      "evaluator_fallback": false,
+      "evaluator_reason": null,
+      "evaluator_model": "gpt-6-luna",
+      "policy_version": "synthetic-v1",
+      "confidence": 0.78,
+      "selection_elapsed_ms": 110,
+      "elapsed_ms": 125,
+      "selected_candidate_id": "sol_low",
+      "selected_action": "stay",
+      "admitted_choices": [
+        {
+          "id": "sol_low",
+          "model": "gpt-6.1-sol",
+          "effort": "low",
+          "adapter": "native",
+          "action": "stay"
+        },
+        {
+          "id": "luna_high",
+          "model": "gpt-6-luna",
+          "effort": "high",
+          "adapter": "native",
+          "action": "delegate"
+        }
+      ],
+      "choice_probabilities": {
+        "sol_low": 0.78,
+        "luna_high": 0.22
+      }
     },
     {
       "source": "router",

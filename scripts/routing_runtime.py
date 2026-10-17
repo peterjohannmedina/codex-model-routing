@@ -416,6 +416,11 @@ def main(argv=None):
                 observation = outcome.get('observations', {})
                 event = {**record, 'stage': 0 if args.preflight_only else 2,
                     'model': candidate.get('model'), 'effort': candidate.get('effort'), 'adapter': candidate.get('adapter'),
+                    'selected_candidate_id': candidate.get('id'), 'selected_action': candidate.get('action'),
+                    'evaluator_model': provenance.get('evaluator_model'), 'policy_version': provenance.get('policy_version'),
+                    'confidence': provenance.get('confidence'), 'admitted_choices': provenance.get('admitted_choices'),
+                    'choice_probabilities': provenance.get('choice_probabilities'),
+                    'selection_elapsed_ms': provenance.get('selection_elapsed_ms'),
                     'fallback_reason': provenance.get('fallback_reason'), 'local_status': provenance.get('local_status'),
                     'execution_status': outcome.get('execution', {}).get('status', 'unobserved'),
                     'error': result.get('reason', result.get('error')) or outcome.get('execution', {}).get('reason'),

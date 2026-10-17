@@ -382,6 +382,7 @@ class DecisionsProvider:
             raise ProviderFailure("invalid_response") from None
         return answer["choice"], {"evaluator_model": DECISION_MODEL,
                                   "confidence": answer["confidence"],
+                                  "choice_probabilities": distribution,
                                   "request_sha256": hashlib.sha256(encoded).hexdigest(),
                                   "request_bytes": len(encoded)}
 
@@ -411,10 +412,14 @@ def recommend(request: Request, provider: DecisionProvider) -> dict:
         selected = request.fallback
         used = "rules"
         reason = "provider_error"
+    elapsed_ms = round((time.monotonic() - started) * 1000)
     return {"schema_version": 1, "recommendation": asdict(selected),
             "provenance": {"requested_provider": provider.name, "used_provider": used,
                            "fallback_reason": reason, "policy_version": POLICY_VERSION,
-                           "elapsed_ms": round((time.monotonic() - started) * 1000),
+                           "elapsed_ms": elapsed_ms, "selection_elapsed_ms": elapsed_ms,
+                           "admitted_choices": [
+                               {key: getattr(c, key) for key in ('id', 'model', 'effort', 'adapter', 'action')}
+                               for c in request.candidates],
                            **metadata}}
 
 

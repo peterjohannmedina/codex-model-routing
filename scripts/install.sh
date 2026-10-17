@@ -64,6 +64,10 @@ for relative_path in \
     references/decision-providers.md \
     assets/routing-packet.example.json \
     scripts/routing_decision.py \
+    scripts/routing_benchmark.py \
+    references/decision-benchmarking.md \
+    assets/benchmarks/suite.synthetic.json \
+    assets/benchmarks/outcomes.synthetic.json \
     scripts/routing_runtime.py \
     scripts/routing_catalog.py \
     scripts/routing_state.py \

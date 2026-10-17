@@ -141,10 +141,16 @@ def main(argv=None):
                     page.reload(wait_until='domcontentloaded')
                     expect(page.locator('#requests')).to_have_text('8')
                     expect(page.locator('#events details')).to_have_count(8)
-                    page.locator('#events details').first.locator('summary').click()
+                    decision = next(e for e in fixture['events'] if e.get('confidence') is not None)
+                    decision_row = page.locator('#events details').filter(has=page.get_by_text(decision['request_id'], exact=True))
+                    decision_row.locator('summary').click()
+                    expect(decision_row).to_contain_text('Evaluator confidence (not task quality)')
+                    expect(decision_row).to_contain_text('0.780')
+                    expect(decision_row).to_contain_text('probability 0.220')
+                    expect(decision_row).to_contain_text('110 / 125')
                     page.locator('#activity').screenshot(path=str(output / 'dashboard-activity.png'), animations='disabled')
                     stage = 'expanded-observation-polling-regression'
-                    observation_key = page.locator('#events details').first.evaluate('(node) => node.routingObservationKey')
+                    observation_key = decision_row.evaluate('(node) => node.routingObservationKey')
                     request_id = json.loads(observation_key)[2]
                     expanded = page.locator('#events details').filter(has=page.get_by_text(request_id, exact=True))
                     summary = expanded.locator('summary')

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased - 2026-10-17
+
+- Retain bounded admitted choices, validated probabilities, confidence, selection
+  latency and policy/evaluator provenance in new router records. Show these in
+  Activity with explicit older-record, billing and task-quality limits. Exclude
+  descriptions, raw inputs/outputs and request digests from history.
+- Add a standard-library offline benchmark planner/comparator with fixed rules
+  and Sol baselines, admission checks, paired holdout/development summaries,
+  unknown-usage coverage and clearly synthetic example outcomes. It performs no
+  provider calls or task execution and does not install a grader or dispatcher.
+
 ## Unreleased - 2026-10-16
 
 - Accept the independently reviewed CLI 0.163.0 log contract alongside 0.162.1.

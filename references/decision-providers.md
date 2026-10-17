@@ -170,6 +170,9 @@ The recommendation echoes trusted candidate fields, including its description;
 sanitize those fields as carefully as the task summary.
 The CLI records allowlisted metadata when local recording is enabled; use
 `--no-ledger` to disable it. Provider primitives do not persist observations.
+New ledger rows retain admitted route tuples, validated probabilities,
+confidence, policy/evaluator model and selection latency, excluding descriptions
+and request digests. See [decision inspection and benchmarking](decision-benchmarking.md).
 Exit 0 means a valid recommendation
 (including an explicit rules fallback); exit 2 means invalid trusted inputs.
 
