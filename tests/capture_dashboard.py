@@ -62,7 +62,7 @@ def main(argv=None):
                             credential_transmissions.append(True)
                             route.abort()
                             return
-                        allowed = ((method == 'GET' and path in ('/', '/app.js', '/style.css', '/favicon.ico', '/api/session', '/api/state'))
+                        allowed = ((method == 'GET' and path in ('/', '/app.js', '/style.css', '/router-mark.svg', '/favicon.ico', '/api/session', '/api/state'))
                                    or (method == 'POST' and path == '/api/auth'))
                         if parsed.scheme != 'http' or parsed.netloc != urlsplit(server.origin).netloc or not allowed:
                             blocked.append(True)
@@ -86,6 +86,12 @@ def main(argv=None):
                     expect(page).to_have_url(server.origin + '/')
                     expect(page.locator('#message')).to_be_empty()
                     expect(page.locator('#save')).to_be_enabled()
+                    expect(page.get_by_role('heading',name='Optimize Codex',exact=True)).to_be_visible()
+                    expect(page.locator('.router-mark')).to_be_visible()
+                    assert page.locator('.router-mark').evaluate('(image)=>image.complete && image.naturalWidth > 0')
+                    expect(page.locator('#native-managed')).to_be_checked()
+                    expect(page.locator('#catalog-models input')).to_have_count(7)
+                    expect(page.locator('#catalog-status')).to_contain_text('Entitlement and remote freshness remain unverified')
                     assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
 
                     stage = 'capture-overview'
@@ -96,7 +102,7 @@ def main(argv=None):
 
                     stage = 'providers-navigation-refresh'
                     page.set_viewport_size({'width': 1440, 'height': 2000})
-                    page.get_by_role('link', name='Providers', exact=True).click()
+                    page.get_by_role('link', name='Models & providers', exact=True).click()
                     page.reload(wait_until='domcontentloaded')
                     expect(page.locator('#requests')).to_have_text('8')
                     expect(page.locator('#save')).to_be_enabled()

@@ -8,6 +8,8 @@ function requireAuthorization() {
   text('connection','Browser authorization required');
   text('message','Reopen Routing desk using its installed shortcut or bootstrap open command. This obtains a fresh one-use browser authorization; no server restart is needed. This tab has stopped polling and its displayed values may be stale.');
   byId('message').className='error';byId('save').disabled=true;byId('reload').disabled=true;
+  byId('catalog-refresh').disabled=true;byId('native-managed').disabled=true;
+  for(const input of modelInputs.values())input.disabled=true;
 }
 const fields = {
   decisions: {'enabled':'decisions-enabled','api_key_env':'decisions-key-env','timeout_seconds':'decisions-timeout','minimum_confidence':'decisions-confidence','max_input_tokens':'decision-token-cap','max_cost_usd':'decision-cost-cap'},
@@ -68,7 +70,7 @@ for(const group of ['decisions','local']) {
   node.addEventListener('input',()=>{node.setCustomValidity('');node.setAttribute('aria-invalid','false');});
 }
 async function api(path, body, bootstrap) {
-  const controller = new AbortController(), timeout = setTimeout(()=>controller.abort(),5000);
+  const controller = new AbortController(), timeout = setTimeout(()=>controller.abort(),path==='/api/models/refresh'?12000:5000);
   const options = {credentials:'same-origin', cache:'no-store',signal:controller.signal,headers:{'X-Routing-CSRF':csrf}};
   if (body !== undefined) Object.assign(options, {method:'POST',headers:{'Content-Type':'application/json','X-Routing-CSRF':csrf},body:JSON.stringify(body)});
   if (bootstrap) options.headers['X-Routing-Bootstrap']=bootstrap;
@@ -92,6 +94,9 @@ function fill(config, version) {
     const node=byId(fields[group].api_key_env);node.setCustomValidity('');node.setAttribute('aria-invalid','false');
   }
   formVersion = version; loaded = true; byId('save').disabled = false;
+  byId('native-managed').checked=config.native?.allowed_models!==null&&config.native?.allowed_models!==undefined;
+  for(const [id,input] of modelInputs)input.checked=(config.native?.allowed_models||[]).includes(id);
+  updateNativeControls();
   text('save-status','Saved settings loaded. Keys are stored separately; provider execution requires consent.');
 }
 function readForm() {
@@ -103,7 +108,37 @@ function readForm() {
       config[group][key] = node.type === 'checkbox' ? node.checked : node.type === 'number' ? (node.value === '' ? null : Number(node.value)) : key === 'efforts' ? node.value.split(',').map(s=>s.trim()).filter(Boolean) : node.value.trim() || null;
     }
   }
+  config.native={allowed_models:byId('native-managed').checked?Array.from(modelInputs).filter(([,input])=>input.checked).map(([id])=>id):null};
   return config;
+}
+let modelInputs=new Map(), catalogSignature=null, catalogBusy=false;
+function updateNativeControls(){
+  const managed=byId('native-managed').checked;
+  for(const input of modelInputs.values())input.disabled=authorizationRequired||!managed||input.unsupported;
+  const count=Array.from(modelInputs.values()).filter(input=>input.checked).length;
+  text('native-policy-status',managed?(count?count+' selected. Save settings to apply.':'No native models selected. Saving blocks native routing; eligible local routes remain possible.'):'Existing routing policy is unchanged; model checkboxes are inactive.');
+}
+function renderCatalog(data){
+  const catalog=data.model_catalog||{status:'unverified',models:[]};
+  text('catalog-status','Codex catalog: '+catalog.status+'. Entitlement and remote freshness remain unverified.'+(catalog.last_error?' Refresh failed; retained choices are historical.':''));
+  text('catalog-source',(catalog.source||'No Codex query yet')+' · queried '+time(catalog.queried_at)+(catalog.plan_type?' · reported plan '+catalog.plan_type:'')+(catalog.cache_fetched_at?' · native cache timestamp '+time(catalog.cache_fetched_at):''));
+  const saved=data.config.native?.allowed_models;
+  const signature=JSON.stringify([catalog.models,saved]);
+  if(signature!==catalogSignature){
+    const selected=dirty?new Set(Array.from(modelInputs).filter(([,input])=>input.checked).map(([id])=>id)):new Set(saved||[]);
+    const models=[...(catalog.models||[])];
+    for(const id of selected)if(!models.some(m=>m.id===id))models.push({id,efforts:[],policy_supported:false,missing:true});
+    const children=[],next=new Map();
+    for(const [index,model] of models.entries()){
+      const label=document.createElement('label'),input=document.createElement('input'),description=document.createElement('span');
+      input.type='checkbox';input.setAttribute('id','native-model-'+index);input.checked=selected.has(model.id);
+      input.unsupported=!model.policy_supported&&!model.missing;
+      description.textContent=model.id+' · '+(model.missing?'Unavailable in latest report; cannot route':model.efforts.join(', '))+(!model.policy_supported&&!model.missing?' · unsupported by routing policy':'');
+      input.addEventListener('change',()=>{dirty=true;formEpoch++;updateNativeControls();});label.append(input,description);children.push(label);next.set(model.id,input);
+    }
+    byId('catalog-models').replaceChildren(...children);modelInputs=next;catalogSignature=signature;
+  }
+  updateNativeControls();byId('catalog-refresh').disabled=catalogBusy||authorizationRequired;
 }
 function addDetail(list, label, value) {
   const dt=document.createElement('dt'), dd=document.createElement('dd'); dt.textContent=label; dd.textContent=value ?? 'Unknown'; list.append(dt,dd);
@@ -176,6 +211,7 @@ function render(data, formFresh = true) {
   const totals=data.totals;
   text('coverage-status',(data.config.observability.enabled?'Local recording enabled. ':'Local recording disabled. ')+(data.sessions.length?'Retained session labels: '+data.sessions.length+'. Historical records do not prove an active feed.':'No recorded sessions yet. Connect an instrumented command, exec JSON stream or approved new Codex CLI OTel export.')+' Dashboard connection does not connect sessions.');
   const otel=totals.otel || {sessions:0,responses:0}, receiver=data.otel_receiver;
+  text('observed-sessions',number(otel.sessions));text('observed-responses',number(otel.responses));
   text('otel-receiver',receiver?.enabled?'Receiver listening · '+(receiver.accepted_records?'metadata received':'no metadata received'):'Receiver disabled');
   text('otel-summary',otel.sessions+' sessions with retained OTel metadata; '+otel.responses+' model-response observations. '+(otel.responses?'Known input / output tokens: '+number(otel.input_tokens.known)+' / '+number(otel.output_tokens.known)+'; unknown input / output: '+otel.input_tokens.unknown_responses+' / '+otel.output_tokens.unknown_responses+'. ':'No response usage observed. ')+(receiver?.last_received_at?'Last validated batch: '+time(receiver.last_received_at)+'.':'No validated batch in this receiver process.'));
   let diagnostic=!receiver?.enabled?'Start the approved receiver to receive CLI exports.':
@@ -213,7 +249,7 @@ function render(data, formFresh = true) {
     text(name,number(input.known)); text(name+'-unknown',input.unknown_requests+' requests with unknown input usage');
   }
   text('evaluator-cost',money(totals.evaluator_base_cost_estimate_usd));text('local-cost',money(totals.local_cost_estimate_usd));
-  text('scope-note',data.selected_session ? 'Selected session · retained history' : data.sessions.length+' recorded sessions · retained history');
+  text('scope-note',(data.selected_session?'Selected session':'All retained sessions')+' · router commands and JSON collector only');
   const select=byId('session'), current=select.value;
   const all=document.createElement('option');all.value='';all.textContent='All recorded sessions';select.replaceChildren(all);
   for(const session of data.sessions){const option=document.createElement('option');option.value=session;option.textContent=session==='unassigned'?'Unassigned router commands':session;select.append(option);}
@@ -225,7 +261,7 @@ function render(data, formFresh = true) {
     text(name+'-observed',observed?'Last observation: '+(name==='local'?observed.local_status:observed.fallback_reason||'response received')+' · '+time(observed.observed_at)+' (historical)':'Last observation: unobserved');
   }
   if(!dirty&&!saving&&formFresh)fill(data.config,data.config_version);
-  renderEvents(data.events);renderChart(data.daily);
+  renderCatalog(data);renderEvents(data.events);renderChart(data.daily);
   text('updated','Refreshed '+time(data.observed_at)+' · local observation time');text('connection','Dashboard connected · 2s');
 }
 async function refresh(){
@@ -256,6 +292,15 @@ byId('config-form').addEventListener('submit',async event=>{
   finally{saving=false;byId('save').disabled=!loaded;byId('reload').disabled=authorizationRequired;}
 });
 byId('reload').addEventListener('click',()=>{if(saving)return;formEpoch++;dirty=false;refresh();});
+byId('native-managed').addEventListener('change',()=>{dirty=true;formEpoch++;updateNativeControls();});
+byId('catalog-refresh').addEventListener('click',async()=>{
+  if(catalogBusy||authorizationRequired)return;
+  catalogBusy=true;byId('catalog-refresh').disabled=true;
+  text('catalog-status','Reading the signed-in Codex account and picker catalog. No model turn is started.');
+  try{await api('/api/models/refresh',{});await refresh();}
+  catch(error){text('catalog-status',authorizationRequired?'Reopen the dashboard to authorize this tab.':'Catalog refresh failed. Existing data may be stale; no routing choices were changed.');}
+  finally{catalogBusy=false;byId('catalog-refresh').disabled=authorizationRequired;}
+});
 byId('session').addEventListener('change',refresh);
 byId('clear').addEventListener('click',async()=>{if(!confirm('Delete retained local usage metadata? This does not change provider settings or erase filesystem backups.'))return;try{await api('/api/ledger/clear',{confirm:true});await refresh();}catch(error){text('message','Could not clear history: '+error.message);}});
 (async()=>{try{

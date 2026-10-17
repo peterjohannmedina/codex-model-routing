@@ -144,7 +144,7 @@ class Request:
     def parse(cls, raw: object, overrides: Overrides = Overrides()) -> Request:
         fields = {"schema_version", "summary", "available_models", "candidates",
                   "fallback_id", "conservation_mode", "stronger_exception",
-                  "local_work_eligible", "ready_adapters", "ceilings", "require_local"}
+                  "local_work_eligible", "ready_adapters", "ceilings", "require_local", "required_modalities"}
         value = object_fields(raw, fields, {"schema_version", "summary", "available_models",
                                            "candidates", "fallback_id", "conservation_mode"})
         if type(value["schema_version"]) is not int or value["schema_version"] != 1:
@@ -156,10 +156,11 @@ class Request:
             if type(value.get(key, False)) is not bool:
                 raise RoutingError("invalid_policy_flag")
         catalog = value["available_models"]
-        if not isinstance(catalog, dict) or not catalog:
+        if not isinstance(catalog, dict):
             raise RoutingError("missing_catalog")
         for model, efforts in catalog.items():
-            if (model not in NATIVE_MODELS or not isinstance(efforts, list) or not efforts
+            from routing_catalog import model_id
+            if (not model_id(model) or not isinstance(efforts, list) or not efforts
                     or any(not isinstance(e, str) or e not in EFFORTS for e in efforts)
                     or (model in LUNA_MODELS and "ultra" in efforts)):
                 raise RoutingError("invalid_catalog")
@@ -426,14 +427,24 @@ def main(argv=None) -> int:
     parser.add_argument("--allow-api", action="store_true", help="explicit metered-call consent")
     parser.add_argument("--timeout-seconds", type=float, default=3.0)
     parser.add_argument("--minimum-confidence", type=float, default=0.6)
+    parser.add_argument("--config", type=Path, help="routing settings, including persisted native eligibility")
     args = parser.parse_args(argv)
     try:
         overrides = Overrides.parse(load_file(args.overrides)) if args.overrides else Overrides()
-        request = Request.parse(load_file(args.packet), overrides)
-        provider = (RulesProvider() if args.provider == "rules" else DecisionsProvider(
+        import routing_runtime as runtime
+        import routing_catalog as catalog
+        path = args.config or Path(os.environ.get('CODEX_HOME',Path.home()/'.codex'))/'routing/config.json'
+        if args.config and not path.is_file(): raise RoutingError('config_not_found')
+        config = runtime.Config.parse(load_file(path)) if path.is_file() else runtime.Config()
+        packet = catalog.restrict(load_file(args.packet), config.native.allowed_models, catalog.load(path.parent))
+        request = Request.parse(packet, overrides)
+        block = runtime.evaluator_block_reason(config) if args.provider=='decisions' else None
+        provider = (RulesProvider() if args.provider == "rules" or block else DecisionsProvider(
             api_key=os.environ.get("OPENAI_API_KEY", ""), allow_api=args.allow_api,
             timeout_seconds=args.timeout_seconds, minimum_confidence=args.minimum_confidence))
-        print(json.dumps(recommend(request, provider), allow_nan=False))
+        result = recommend(request, provider)
+        if block: result['provenance'].update(requested_provider='decisions',fallback_reason=block)
+        print(json.dumps(result, allow_nan=False))
         return 0
     except RoutingError as error:
         print(json.dumps({"error": "invalid_routing_configuration", "reason": str(error)}))

@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "native": {"allowed_models": null},
   "decisions": {
     "enabled": false,
     "api_key_env": "OPENAI_API_KEY",

@@ -65,6 +65,7 @@ for relative_path in \
     assets/routing-packet.example.json \
     scripts/routing_decision.py \
     scripts/routing_runtime.py \
+    scripts/routing_catalog.py \
     scripts/routing_state.py \
     scripts/routing_otel.py \
     scripts/routing_otel_setup.py \
@@ -77,6 +78,7 @@ for relative_path in \
     assets/dashboard/index.html \
     assets/dashboard/app.js \
     assets/dashboard/style.css \
+    assets/dashboard/router-mark.svg \
     scripts/Invoke-Routing.ps1 \
     scripts/Set-RoutingApiKey.ps1 \
     scripts/invoke-routing.sh \

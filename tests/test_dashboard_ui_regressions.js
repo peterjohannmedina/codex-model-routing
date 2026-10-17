@@ -31,6 +31,7 @@ function boot(hash,delaySave=false,denied=false){
       if(delayed)await delayed;
       return{ok:true,json:async()=>captured};
     }
+    if(url==='/api/models/refresh')return{ok:true,json:async()=>({model_catalog:snapshot.model_catalog})};
     assert.equal(url,'/api/config');const body=JSON.parse(options.body);
     if(delaySave&&saves===0)await gate;
     saves++;snapshot.config=body.config;snapshot.config_version='saved-'+saves;
@@ -130,4 +131,34 @@ async function observationExpansion(){
   ui.snapshot().events=[{...a,source:'router',session_id:'22222222-2222-4222-8222-222222222222'}];ui.poll();await flush();
   assert.equal(ui.nodes.events.children[0].open,false,'a different source borrowed expansion state');
 }
-(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();if(!selected||selected==='expansion')await observationExpansion();console.log('Dashboard navigation, save, poll, authorization and expansion regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});
+async function catalogControls(){
+  const ui=boot('');await flush();await flush();
+  assert.equal(ui.calls.filter(c=>c.url==='/api/models/refresh').length,0,'polling performed account discovery');
+  const reported=id=>({id,efforts:['low','high'],policy_supported:true,input_modalities:['text']});
+  ui.snapshot().model_catalog={status:'queried',source:'codex_app_server_model_list',models:[reported('model-one'),reported('model-two')]};
+  ui.snapshot().config.native={allowed_models:['model-one']};ui.poll();await flush();
+  let choices=ui.nodes['catalog-models'].children.map(label=>label.children[0]);
+  assert.equal(choices.length,2);assert.equal(choices[0].checked,true);assert.equal(choices[1].checked,false);
+  assert.equal(ui.nodes['native-managed'].checked,true);assert.equal(choices[1].disabled,false);
+  choices[1].checked=true;choices[1].listeners.change();ui.nodes['config-form'].listeners.input();
+  ui.nodes.reload.listeners.click();await flush();await flush();
+  assert.equal(ui.nodes['catalog-models'].children[1].children[0].checked,false,'reload retained an unsaved choice with an unchanged catalog signature');
+  choices[1].checked=true;choices[1].listeners.change();ui.nodes['config-form'].listeners.input();
+  ui.poll();await flush();assert.equal(ui.nodes['catalog-models'].children[1].children[0].checked,true,'poll discarded model edit');
+  ui.snapshot().model_catalog.models.push(reported('new-model'));ui.poll();await flush();
+  choices=ui.nodes['catalog-models'].children.map(label=>label.children[0]);
+  assert.equal(choices[2].checked,false,'newly discovered model became eligible');
+  await ui.nodes['config-form'].listeners.submit({preventDefault(){}});
+  const save=ui.calls.filter(c=>c.url==='/api/config').at(-1);assert.deepEqual(JSON.parse(save.options.body).config.native.allowed_models,['model-one','model-two']);
+  for(const label of ui.nodes['catalog-models'].children)label.children[0].checked=false;
+  ui.nodes['config-form'].listeners.input();await ui.nodes['config-form'].listeners.submit({preventDefault(){}});
+  assert.deepEqual(JSON.parse(ui.calls.filter(c=>c.url==='/api/config').at(-1).options.body).config.native.allowed_models,[]);
+  assert.match(ui.nodes['native-policy-status'].textContent,/blocks native routing/);
+  ui.snapshot().totals.otel={sessions:4,responses:42};ui.poll();await flush();
+  assert.equal(ui.nodes['observed-sessions'].textContent,'4');assert.equal(ui.nodes['observed-responses'].textContent,'42');
+  assert.equal(ui.nodes.requests.textContent,'0');assert.equal(ui.nodes.executions.textContent,'0');
+  await ui.nodes['catalog-refresh'].listeners.click();assert.equal(ui.calls.filter(c=>c.url==='/api/models/refresh').length,1);
+  ui.forbid();await ui.nodes['catalog-refresh'].listeners.click();
+  assert.equal(ui.nodes['catalog-refresh'].disabled,true);assert.equal(ui.nodes['native-managed'].disabled,true);
+}
+(async()=>{const selected=process.argv[2];if(!selected||selected==='anchors')await anchors();if(!selected||selected==='save')await delayedSave();if(!selected||selected==='poll')await stalePoll();if(!selected||selected==='auth')await expiredAuthorization();if(!selected||selected==='expansion')await observationExpansion();if(!selected||selected==='catalog')await catalogControls();console.log('Dashboard navigation, save, poll, authorization, catalog controls and expansion regressions pass.');})().catch(error=>{console.error(error);process.exitCode=1;});

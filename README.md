@@ -149,13 +149,13 @@ is required for the native baseline.
 
 *Actual dashboard rendered in Chromium with synthetic demo data. The values are
 illustrative; no provider calls, real account activity or measured bills were used.
-These images document the initial dashboard release.*
+These images show the account-aware model controls and observation labels.*
 See [capture provenance and reproduction steps](references/dashboard-screenshots.md).
 
 <details>
 <summary>Provider controls and activity screenshots (synthetic demo)</summary>
 
-![Dashboard provider controls showing independent Decisions and local LLM settings, historical observations, and local history retention controls.](docs/images/dashboard-providers.png)
+![Dashboard model controls with seven reported models and multi-select checkboxes, plus independent Decisions and local LLM settings.](docs/images/dashboard-providers.png)
 
 *Saved provider settings and historical observations. Saving settings does not
 run inference or grant spending permission.*
@@ -256,3 +256,19 @@ The public default local route uses a configured endpoint/model, with no Muse or
 Install the package once per Codex environment or user profile. Publishing or updating a repository does not update an existing installation; rerun the installer when you want to deploy a newer version.
 
 Routing decisions do not change permissions. The optional `routing-bypass` profile is provided as a reference and is not enabled by the installer.
+
+## Account-aware dashboard controls
+
+The dashboard now reports the signed-in Codex client's picker catalog, with
+multi-model eligibility checkboxes, query/cache timestamps and explicit stale,
+error and unverified-access states. Refresh performs metadata discovery only.
+New models start unchecked when an explicit allowlist is active; no selected
+models blocks native recommendations. Existing unmanaged settings remain
+unchanged until you opt in and save. Disabled models are excluded from provider
+selection and fallback paths. See [model catalog and policy](references/model-catalog.md)
+for migration, account-scope limits, capabilities, tests and automatic-switching
+feasibility. This does not install automatic model dispatch.
+
+The **Optimize Codex** overview separates observed native sessions/responses
+from router-command and opt-in JSON-collector counts. Responses are not counted
+as completed tasks. Its SVG mark identifies this independent Codex routing tool.

@@ -21,6 +21,7 @@ import routing_decision as core
 import routing_runtime as runtime
 import routing_state as state
 import routing_otel as otel
+import routing_catalog as catalog
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets/dashboard'
 
@@ -46,6 +47,7 @@ CONFIG_HINTS = {
     'sensitive_endpoint': 'Use a nonsecret HTTP(S) base URL without credentials, query strings or fragments.',
     'invalid_observability_configuration': 'Check history retention (1–30 days), maximum requests (10–5000), and non-negative rates.',
     'invalid_config_flag': 'Provider and history toggles must be enabled or disabled.',
+    'invalid_native_models': 'Select distinct public model IDs from the Codex catalog.',
 }
 
 
@@ -78,7 +80,8 @@ def config_error_field(raw, code):
             'invalid_evaluator_token_cap':'decisions.max_input_tokens', 'invalid_evaluator_cost_cap':'decisions.max_cost_usd',
             'invalid_output_budget':'local.max_output_tokens', 'invalid_local_efforts':'local.efforts',
             'invalid_local_model':'local.model', 'invalid_local_url':'local.base_url',
-            'invalid_observability_configuration':'observability', 'invalid_config_flag':'providers'}.get(code)
+            'invalid_observability_configuration':'observability', 'invalid_config_flag':'providers',
+            'invalid_native_models':'native.allowed_models'}.get(code)
 
 
 def config_version(config):
@@ -111,6 +114,7 @@ class Store:
             raise ValueError('state_must_be_outside_repository')
         self.path = self.root / 'config.json'
         self.lock = threading.Lock()
+        self.catalog_error = None
         self.otel_status = {'enabled': False, 'last_received_at': None, 'last_observation_at': None,
             'accepted_records': 0, 'ignored_records': 0, 'rejected_records': 0,
             'requests': 0, 'unauthorized_requests': 0, 'invalid_batches': 0, 'storage_errors': 0,
@@ -183,7 +187,9 @@ class Store:
         for event in events:
             day = event.get('first_observed_at', event['observed_at'])[:10]
             daily.setdefault(day, []).append(event)
-        return {'config': config, 'config_version': version, 'events': events,
+        model_catalog = catalog.public(catalog.load(self.root))
+        if self.catalog_error: model_catalog.update(status='error',last_error=self.catalog_error)
+        return {'config': config, 'config_version': version, 'events': events, 'model_catalog':model_catalog,
                 'totals': state.totals(events, settings), 'sessions': sessions, 'selected_session': session,
                 'daily': [{'day': day, **state.totals(items, settings)} for day, items in sorted(daily.items())],
                 'observed_at': state.dt.datetime.now(state.dt.timezone.utc).isoformat(),
@@ -351,12 +357,13 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self):
-        public = self.path in ('/', '/app.js', '/style.css')
+        public = self.path in ('/', '/app.js', '/style.css', '/router-mark.svg')
         if not self.allowed(session=not public, public=public): return self.reply(403, {'error': 'forbidden_origin_or_session'})
         try:
             if public:
                 filename, kind = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
-                                  '/style.css': ('style.css', 'text/css; charset=utf-8')}[self.path]
+                                  '/style.css': ('style.css', 'text/css; charset=utf-8'),
+                                  '/router-mark.svg': ('router-mark.svg','image/svg+xml')}[self.path]
                 return self.reply(200, (ASSETS / filename).read_bytes(), kind)
             if self.path == '/api/session': return self.reply(200, {'csrf': self.server.csrf})
             if urlsplit(self.path).path == '/api/state':
@@ -396,6 +403,16 @@ class Handler(BaseHTTPRequestHandler):
                 core.object_fields(raw, {'config', 'version'}, {'config', 'version'})
                 _, version = self.server.store.save(raw['config'], raw['version'])
                 return self.reply(200, {'saved': True, 'config_version': version})
+            if self.path == '/api/models/refresh':
+                if raw != {}: raise ValueError()
+                try:
+                    result = catalog.refresh(self.server.store.root,
+                        Path(os.environ.get('CODEX_HOME',Path.home()/'.codex')))
+                    self.server.store.catalog_error = None
+                    return self.reply(200, {'model_catalog':result})
+                except catalog.CatalogError as error:
+                    self.server.store.catalog_error = str(error)
+                    return self.reply(503, {'error':'catalog_refresh_failed', 'reason':str(error)})
             if self.path == '/api/ledger/clear':
                 if raw != {'confirm': True}: raise ValueError()
                 state.Ledger(self.server.store.root).clear()

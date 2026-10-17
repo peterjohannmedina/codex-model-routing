@@ -253,6 +253,24 @@ class LocalState(unittest.TestCase):
 
 @unittest.skipIf(os.environ.get('ROUTING_SKIP_SOCKET_TESTS') == '1', 'Local socket restrictions; CI runs HTTP integration')
 class DashboardHTTP(unittest.TestCase):
+    def test_catalog_refresh_requires_mutating_authorization_and_never_runs_on_poll(self):
+        with patch.object(dashboard.catalog,'refresh',return_value={'status':'queried','models':[],'entitlement':'unverified'}) as refresh:
+            self.assertEqual(self.authenticated('GET','/api/state')[0].status,200)
+            refresh.assert_not_called()
+            self.assertEqual(self.request('POST','/api/models/refresh','{}',{'Content-Type':'application/json'})[0].status,403)
+            self.assertEqual(self.authenticated('POST','/api/models/refresh',{},**{'Origin':'null'})[0].status,403)
+            refresh.assert_not_called()
+            response,body=self.authenticated('POST','/api/models/refresh',{})
+            self.assertEqual(response.status,200);self.assertEqual(json.loads(body)['model_catalog']['entitlement'],'unverified')
+            self.assertEqual(refresh.call_count,1)
+            self.assertEqual(self.authenticated('POST','/api/models/refresh',{'command':'not accepted'})[0].status,400)
+            self.assertEqual(refresh.call_count,1)
+        with patch.object(dashboard.catalog,'refresh',side_effect=dashboard.catalog.CatalogError('catalog_refresh_timeout')):
+            response,body=self.authenticated('POST','/api/models/refresh',{})
+            self.assertEqual(response.status,503);self.assertEqual(json.loads(body)['reason'],'catalog_refresh_timeout')
+            _,body=self.authenticated('GET','/api/state')
+            self.assertEqual(json.loads(body)['model_catalog']['status'],'error')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=ROOT.parent)
         self.addCleanup(self.temp.cleanup)
