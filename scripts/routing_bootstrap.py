@@ -29,16 +29,50 @@ ERROR_HINTS={
     'owned_files_changed_review_then_repair':'Package integrity check failed. Review local edits before repair.',
     'existing_unmanaged_skill_requires_review':'An unmanaged skill exists. Review it before explicitly choosing --adopt-existing; it will be backed up.',
     'private_state_permissions_required':'State permissions are not private. No ACL or security policy was changed; review permissions separately.',
+    'private_state_probe_execution_failed':'Windows could not execute the read-only permission checker. Review the launcher execution context and its AuthorizationManager/application-control diagnostics. No ACL or execution-policy setting was changed; do not bypass the checker.',
+    'private_state_probe_unavailable':'The read-only permission check is unavailable. This is not a verdict that the directory is unsafe. Review access in an approved execution context; no permission workaround was attempted.',
+    'private_state_probe_timeout':'The read-only permission checker timed out. Startup remains blocked; no permissions or security policy were changed.',
+    'private_state_probe_invalid_response':'The permission checker did not return its expected verdict. Startup remains blocked; no permissions or security policy were changed.',
     'loopback_port_unavailable_or_policy_blocked':'The loopback port is occupied or blocked. Do not bypass policy or kill an unrelated process; inspect status or choose an explicit port.',
     'approved_telemetry_setup_required':'Telemetry needs its separate approved setup. Installation and start never activate a Codex exporter.',
     'approved_telemetry_scope_changed':'Telemetry differs from its approved setup. Review it; do not replace exporters automatically.',
     'receiver_start_not_confirmed_no_policy_bypass':'Background startup was not confirmed. Check status and loopback permissions; no security workaround was attempted.',
+    'receiver_start_failed':'The background receiver could not start. Review dependency, permission and listener diagnostics in an approved context; no policy bypass was attempted.',
+    'receiver_start_failed_see_status':'The background receiver could not start. Review dependency, permission and listener diagnostics in an approved context; no policy bypass was attempted.',
     'controller_rejected_or_unmanaged_server':'The listener is not the authenticated managed instance. It was not stopped or replaced.',
+    'controller_connection_timeout':'The managed controller timed out. Its state is unverified; no listener was replaced or automatically retried.',
+    'controller_connection_denied':'Access to the managed controller was denied. No alternate client or policy bypass was attempted.',
+    'controller_connection_reset':'The managed controller connection was reset. Its state is unverified; no listener was replaced or automatically retried.',
+    'controller_protocol_failed':'The managed controller did not return a valid HTTP response. No listener was replaced or automatically retried.',
+    'controller_connection_failed':'The managed controller connection failed. Its state is unverified; no listener was replaced or automatically retried.',
     'not_installed':'Install the skill with the supported bootstrap first.',
     'install_skill_first':'Install the skill with the supported bootstrap first.',
     'state_must_be_outside_repository':'Choose a Codex home outside Git; private control state and backups must not be committed.',
 }
 _children={}
+CONTROL_TIMEOUT_SECONDS=3
+
+
+def show_windows_error(code, hint):
+    """A hidden pythonw launcher must not fail silently. Fixed text only."""
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None,
+            'Codex Routing Dashboard could not launch.\n\n'+code+'\n\n'+hint,
+            'Codex Routing Dashboard', 0x10)
+        return True
+    except (OSError, AttributeError): return False
+
+
+def emit(result):
+    # pythonw normally has no standard streams; never display successful output
+    # containing a private browser handoff path or any capability.
+    if sys.stdout is not None:
+        print(json.dumps(result))
+    elif os.name == 'nt' and result.get('error'):
+        code = result['error'] if result['error'] in ERROR_HINTS else 'bootstrap_operation_failed'
+        show_windows_error(code, ERROR_HINTS.get(code,
+            'Run the installed bootstrap in a visible terminal for a fixed diagnostic code. No policy bypass or paid call was attempted.'))
 
 
 def controller(paths, action='status'):
@@ -50,7 +84,10 @@ def controller(paths, action='status'):
     if type(port) is not int or not 1<=port<=65535:raise ValueError('invalid_receiver_state')
     token=paths.cap.read_text(encoding='ascii').strip()
     if not re.fullmatch(r'[A-Za-z0-9_-]{43,128}',token):raise ValueError('invalid_control_capability')
-    connection=http.client.HTTPConnection('127.0.0.1',port,timeout=1)
+    # Windows can take more than one second to return an explicit refusal for
+    # a closed local port. Each socket operation has a three-second timeout;
+    # timeout is still an unverified failure, never permission to replace a listener.
+    connection=http.client.HTTPConnection('127.0.0.1',port,timeout=CONTROL_TIMEOUT_SECONDS)
     try:
         connection.request('POST','/api/lifecycle',json.dumps({'action':action}),
             {'Content-Type':'application/json','X-Routing-Control':token})
@@ -60,6 +97,11 @@ def controller(paths, action='status'):
         if result.get('instance_id')!=record.get('instance_id'):raise ValueError('receiver_identity_mismatch')
         return result
     except ConnectionRefusedError:return None
+    except TimeoutError:raise ValueError('controller_connection_timeout') from None
+    except PermissionError:raise ValueError('controller_connection_denied') from None
+    except ConnectionResetError:raise ValueError('controller_connection_reset') from None
+    except http.client.HTTPException:raise ValueError('controller_protocol_failed') from None
+    except OSError:raise ValueError('controller_connection_failed') from None
     finally:connection.close()
 
 
@@ -142,7 +184,7 @@ def start(paths, otel=None):
                     if child is not None:
                         try:child.wait(timeout=1)
                         except subprocess.TimeoutExpired:pass
-                    raise ValueError('receiver_start_failed_see_status')
+                    raise ValueError(value['error'] if value['error'] in ERROR_HINTS else 'receiver_start_failed_see_status')
                 live=controller(paths)
                 if live:return {'running':True,'changed':True,**live}
         time.sleep(.05)
@@ -177,7 +219,10 @@ def build_server(paths,identity):
 def cleanup_server(paths,identity,server):
     if server:server.server_close()
     if paths.run.is_file() and installation.read_json(paths.run).get('instance_id')==identity:
-        paths.run.unlink();paths.cap.unlink(missing_ok=True)
+        # run.json is the stop-completion marker. Remove it last so a caller
+        # cannot observe "stopped", restart, then lose its new capability to
+        # the old receiver's remaining cleanup.
+        paths.cap.unlink(missing_ok=True);paths.run.unlink()
 
 
 def serve(paths, identity):
@@ -186,8 +231,9 @@ def serve(paths, identity):
     try:
         server=build_server(paths,identity)
         server.serve_forever(poll_interval=.1)
-    except (OSError,ValueError,KeyError,TypeError):
-        installation.atomic(paths.service/'ready.json',installation.encoded({'instance_id':identity,'error':'receiver_start_failed'}))
+    except (OSError,ValueError,KeyError,TypeError) as error:
+        code=str(error) if str(error) in ERROR_HINTS else 'receiver_start_failed'
+        installation.atomic(paths.service/'ready.json',installation.encoded({'instance_id':identity,'error':code}))
         return 2
     finally:
         cleanup_server(paths,identity,server)
@@ -281,11 +327,11 @@ def main(argv=None):
                 elif args.command=='open':result=open_dashboard(paths,args.otel_receiver,not args.no_browser)
                 else:result=stop(paths)
         result.setdefault('codex_cli_found',shutil.which('codex') is not None)
-        print(json.dumps(result));return 0
+        emit(result);return 0
     except (OSError,ValueError,KeyError,TypeError,UnicodeError,subprocess.SubprocessError,http.client.HTTPException) as error:
         # Raw exceptions may contain private paths or capability headers.
         code=str(error) if str(error) in ERROR_HINTS else 'bootstrap_operation_failed'
-        print(json.dumps({'error':code,'hint':ERROR_HINTS.get(code,'Check dependencies, private state permissions, owned-file integrity, explicit choices and loopback availability; no policy bypass or paid call was attempted.')}));return 2
+        emit({'error':code,'hint':ERROR_HINTS.get(code,'Check dependencies, private state permissions, owned-file integrity, explicit choices and loopback availability; no policy bypass or paid call was attempted.')});return 2
 
 
 if __name__=='__main__':raise SystemExit(main())
