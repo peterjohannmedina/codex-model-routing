@@ -1,6 +1,6 @@
 # Codex Model Routing
 
-A Codex skill for choosing models, reasoning effort, and subagents to fit the task. It weighs capability, available usage, context transfer, and coordination costs, with a built-in option to delegate bounded subtasks to local LLMs.
+A Codex skill for routing work across Luna, Terra, Sol, and Astra. It chooses models, reasoning effort, and subagents to fit the task, weighing capability, available usage, context transfer, and coordination costs, with a built-in option to delegate bounded subtasks to local LLMs.
 
 Native Codex routing works with **no extra providers**. OpenAI Decisions and
 generic local execution are independently optional and disabled by default.
